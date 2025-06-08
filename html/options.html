@@ -24,6 +24,46 @@
         </section>
 
         <section class="settings-section">
+            <h2>Google Drive Integration</h2>
+            <div class="setting">
+                <label for="googleClientId">Google OAuth Client ID:</label>
+                <input type="text" id="googleClientId" name="googleClientId" placeholder="Enter your Google OAuth Client ID" aria-describedby="googleClientIdHelp">
+                <p id="googleClientIdHelp" class="help-text">
+                    Required for Google Drive backup and sync features. 
+                    <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener noreferrer">Get a Client ID from Google Cloud Console</a>.
+                    <br><strong>Setup:</strong> Create an OAuth 2.0 Client ID and enable the Google Drive API.
+                </p>
+            </div>
+            <div class="setting">
+                <div class="google-drive-status">
+                    <p id="driveConnectionStatus" class="connection-status">Not connected</p>
+                    <div class="drive-actions">
+                        <button id="connectDriveBtn" class="drive-btn">Connect to Google Drive</button>
+                        <button id="disconnectDriveBtn" class="drive-btn" style="display: none;">Disconnect</button>
+                        <button id="testDriveBtn" class="drive-btn" style="display: none;">Test Connection</button>
+                    </div>
+                </div>
+            </div>
+            <div class="setting">
+                <label for="autoBackup">Automatic Backup:</label>
+                <select id="autoBackup" name="autoBackup">
+                    <option value="disabled">Disabled</option>
+                    <option value="daily">Daily</option>
+                    <option value="weekly">Weekly</option>
+                    <option value="monthly">Monthly</option>
+                </select>
+                <p class="help-text">Automatically backup your WebInsight data to Google Drive at the specified interval.</p>
+            </div>
+            <div class="setting">
+                <div class="backup-actions">
+                    <button id="manualBackupBtn" class="backup-btn" disabled>Create Backup Now</button>
+                    <button id="restoreBackupBtn" class="backup-btn" disabled>Restore from Backup</button>
+                    <button id="viewBackupsBtn" class="backup-btn" disabled>View Backups</button>
+                </div>
+            </div>
+        </section>
+
+        <section class="settings-section">
             <h2>Appearance</h2>
             <div class="setting">
                 <label for="themeSelect">Theme:</label>
@@ -41,6 +81,26 @@
              <div id="statusMessage" class="status" aria-live="polite"></div>
         </div>
 
-        </div> <script src="../js/options.js"></script>
+        <!-- Google Drive Backup Modal -->
+        <div id="backupModal" class="modal" style="display: none;">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 id="modalTitle">Google Drive Backups</h3>
+                    <button class="modal-close" id="closeModal">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div id="modalContent">
+                        <!-- Dynamic content will be inserted here -->
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button id="modalCancelBtn" class="modal-btn">Cancel</button>
+                    <button id="modalActionBtn" class="modal-btn primary" style="display: none;">Action</button>
+                </div>
+            </div>
+        </div>
+
+        </div> 
+    <script src="../js/options.js"></script>
 </body>
 </html>
