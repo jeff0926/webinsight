@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebInsight Settings</title>
+    <link rel="stylesheet" href="../css/options.css">
+</head>
+<body>
+    <div class="container">
+        <h1>WebInsight Settings</h1>
+
+        <section class="settings-section">
+            <h2>API Configuration</h2>
+            <div class="setting">
+                <label for="apiKey">Google Gemini API Key:</label>
+                <input type="password" id="apiKey" name="apiKey" placeholder="Enter your API key" aria-describedby="apiKeyHelp">
+                <p id="apiKeyHelp" class="help-text">
+                    Your API key enables image analysis features. It is stored locally in your browser's storage and is required for visual analysis.
+                    <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer">Get an API Key from Google AI Studio</a>.
+                    <br><strong>Security Note:</strong> While stored locally, browser storage is not perfectly secure. For production use, a backend solution is recommended.
+                </p>
+            </div>
+        </section>
+
+        <section class="settings-section">
+            <h2>Appearance</h2>
+            <div class="setting">
+                <label for="themeSelect">Theme:</label>
+                <select id="themeSelect" name="themeSelect">
+                    <option value="system">System Default</option>
+                    <option value="light">Light</option>
+                    <option value="dark">Dark</option>
+                </select>
+                 <p class="help-text">Choose the visual theme for the extension popup and options page.</p>
+            </div>
+        </section>
+
+        <div class="actions">
+             <button id="saveSettingsBtn">Save Settings</button>
+             <div id="statusMessage" class="status" aria-live="polite"></div>
+        </div>
+
+        </div> <script src="../js/options.js"></script>
+</body>
+</html>
