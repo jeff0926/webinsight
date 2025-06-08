@@ -1,0 +1,212 @@
+/* css/options.css */
+
+/* --- Base Styles --- */
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+    margin: 0;
+    padding: 20px;
+    background-color: #f0f2f5; /* Slightly off-white background */
+    color: #1d2129; /* Dark text */
+    font-size: 14px;
+    line-height: 1.6;
+    transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.container {
+    max-width: 700px; /* Max width for content */
+    margin: 20px auto; /* Center the container */
+    background-color: #ffffff; /* White background for the card */
+    padding: 25px 30px;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08); /* Soft shadow */
+    border: 1px solid #e1e4e8; /* Subtle border */
+}
+
+/* --- Headings --- */
+h1 {
+    text-align: center;
+    font-size: 1.8em;
+    font-weight: 600;
+    margin-top: 0;
+    margin-bottom: 25px;
+    color: #0366d6; /* Primary blue */
+}
+
+h2 {
+    font-size: 1.3em;
+    font-weight: 500;
+    margin-top: 25px;
+    margin-bottom: 15px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #e1e4e8; /* Separator */
+    color: #333;
+}
+h2:first-of-type {
+    margin-top: 0; /* No top margin for the first section header */
+}
+
+/* --- Settings Sections & Individual Settings --- */
+.settings-section {
+    margin-bottom: 25px;
+}
+
+.setting {
+    margin-bottom: 20px;
+}
+
+label {
+    display: block;
+    margin-bottom: 6px;
+    font-weight: 500; /* Slightly bolder labels */
+    color: #444;
+}
+
+input[type="password"],
+input[type="text"], /* Add if needed */
+select {
+    width: 100%;
+    padding: 10px 12px; /* Comfortable padding */
+    border: 1px solid #ccd0d5; /* Standard border color */
+    border-radius: 6px;
+    box-sizing: border-box; /* Include padding and border in element's total width and height */
+    font-size: 1em;
+    background-color: #f5f6f7; /* Subtle background for inputs */
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+input[type="password"]:focus,
+input[type="text"]:focus,
+select:focus {
+    border-color: #0366d6; /* Highlight focus with blue border */
+    box-shadow: 0 0 0 2px rgba(3, 102, 214, 0.2); /* Subtle focus ring */
+    outline: none; /* Remove default outline */
+    background-color: #fff;
+}
+
+.help-text {
+    font-size: 0.9em;
+    color: #606770; /* Subdued help text color */
+    margin-top: 8px;
+    line-height: 1.4;
+}
+.help-text a {
+    color: #0366d6;
+    text-decoration: none;
+}
+.help-text a:hover {
+    text-decoration: underline;
+}
+.help-text strong { /* Security note emphasis */
+    color: #c0392b; /* Reddish color for warning */
+}
+
+
+/* --- Actions Area (Save Button & Status) --- */
+.actions {
+    margin-top: 30px;
+    display: flex;
+    flex-direction: column; /* Stack button and status */
+    align-items: flex-start; /* Align button left */
+    gap: 15px;
+}
+
+button#saveSettingsBtn {
+    padding: 10px 20px;
+    cursor: pointer;
+    border: none;
+    background-color: #0366d6; /* Primary blue */
+    color: white;
+    border-radius: 6px;
+    font-size: 1.05em;
+    font-weight: 500;
+    transition: background-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+button#saveSettingsBtn:hover {
+    background-color: #005cc5; /* Darker blue on hover */
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+button#saveSettingsBtn:active {
+     background-color: #004b9b;
+}
+
+
+/* --- Status Message --- */
+.status {
+    width: 100%; /* Take full width */
+    font-size: 0.95em;
+    padding: 10px 15px;
+    text-align: center;
+    border-radius: 5px;
+    border: 1px solid transparent;
+    display: none; /* Hidden by default */
+    box-sizing: border-box;
+    word-wrap: break-word;
+}
+
+.status.success {
+    background-color: #e6ffed;
+    color: #1f883d;
+    border-color: #95d7a0;
+    display: block;
+}
+
+.status.error {
+    background-color: #ffeef0;
+    color: #cf222e;
+    border-color: #f7baba;
+    display: block;
+}
+
+
+/* --- Dark Mode --- */
+/* Apply dark mode styles if 'dark-mode' class is on body */
+body.dark-mode {
+    background-color: #1c2128; /* Dark page background */
+    color: #c9d1d9; /* Light primary text */
+}
+
+body.dark-mode .container {
+    background-color: #22272e; /* Dark card background */
+    border-color: #30363d; /* Darker border */
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3); /* Stronger shadow */
+}
+
+body.dark-mode h1 { color: #58a6ff; } /* Brighter blue */
+body.dark-mode h2 {
+    color: #adbac7; /* Lighter heading */
+    border-bottom-color: #30363d;
+}
+
+body.dark-mode label { color: #adbac7; } /* Lighter labels */
+
+body.dark-mode input[type="password"],
+body.dark-mode input[type="text"],
+body.dark-mode select {
+    background-color: #1c2128; /* Dark input background */
+    border-color: #484f58; /* Darker border */
+    color: #c9d1d9; /* Light text in inputs */
+}
+
+body.dark-mode input[type="password"]:focus,
+body.dark-mode input[type="text"]:focus,
+body.dark-mode select:focus {
+    border-color: #58a6ff; /* Blue focus border */
+    background-color: #22272e; /* Slightly lighter focus background */
+    box-shadow: 0 0 0 2px rgba(88, 166, 255, 0.3); /* Blue focus ring */
+}
+
+body.dark-mode .help-text { color: #8b949e; } /* Lighter help text */
+body.dark-mode .help-text a { color: #58a6ff; }
+body.dark-mode .help-text strong { color: #ffa198; } /* Lighter red warning */
+
+body.dark-mode button#saveSettingsBtn {
+    background-color: #238636; /* Green save button in dark mode */
+    color: #ffffff;
+}
+body.dark-mode button#saveSettingsBtn:hover { background-color: #2ea043; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2); }
+body.dark-mode button#saveSettingsBtn:active { background-color: #238636; }
+
+
+body.dark-mode .status.success { background-color: #1f3d2a; color: #56d364; border-color: #2a5a38; }
+body.dark-mode .status.error { background-color: #442c2e; color: #ffa198; border-color: #72343a; }

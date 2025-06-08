@@ -1,0 +1,200 @@
+/* css/panel.css - Styles for the WebInsight Side Panel */
+
+/* --- Base & Variables --- */
+:root {
+    --panel-bg-light: #ffffff;
+    --panel-text-light: #24292e;
+    --panel-border-light: #e1e4e8;
+    --panel-secondary-text-light: #586069;
+    --panel-accent-light: #0366d6;
+    --panel-hover-bg-light: #f6f8fa;
+    --panel-button-bg-light: #f6f8fa;
+    --panel-button-hover-bg-light: #f3f4f6;
+    --panel-button-active-bg-light: #e1e4e8;
+    --panel-button-border-light: #d1d5da;
+    --panel-button-hover-border-light: #c9d1d9;
+    --panel-tag-bg-light: var(--panel-accent-light);
+    --panel-tag-text-light: white;
+    --panel-tag-remove-light: rgba(255, 255, 255, 0.7);
+    --panel-tag-remove-hover-light: white;
+    --panel-filter-tag-bg-light: #eef5ff; /* Light blue for filter tags */
+    --panel-filter-tag-text-light: #0969da;
+    --panel-filter-tag-border-light: #bcdfff;
+    --panel-filter-tag-hover-bg-light: #ddeeff;
+    --panel-filter-tag-active-bg-light: var(--panel-accent-light); /* Use accent color for active */
+    --panel-filter-tag-active-text-light: white;
+    --panel-filter-tag-active-border-light: var(--panel-accent-light);
+    --panel-keypoints-btn-bg-light: #dff7e9; /* Light green */
+    --panel-keypoints-btn-text-light: #1f883d;
+    --panel-keypoints-btn-border-light: #95d7a0;
+    --panel-keypoints-btn-hover-bg-light: #c8f0d9;
+
+
+    --panel-bg-dark: #1c2128;
+    --panel-text-dark: #c9d1d9;
+    --panel-border-dark: #30363d;
+    --panel-secondary-text-dark: #8b949e;
+    --panel-accent-dark: #58a6ff;
+    --panel-hover-bg-dark: #22272e;
+    --panel-button-bg-dark: #30363d;
+    --panel-button-hover-bg-dark: #3e444c;
+    --panel-button-active-bg-dark: #484f58;
+    --panel-button-border-dark: #484f58;
+    --panel-button-hover-border-dark: #586069;
+    --panel-tag-bg-dark: var(--panel-accent-dark);
+    --panel-tag-text-dark: #1c2128; /* Dark text on light blue */
+    --panel-tag-remove-dark: rgba(28, 33, 40, 0.7);
+    --panel-tag-remove-hover-dark: #1c2128;
+    --panel-filter-tag-bg-dark: #20304c; /* Dark blue for filter tags */
+    --panel-filter-tag-text-dark: #79c0ff;
+    --panel-filter-tag-border-dark: #2d4a77;
+    --panel-filter-tag-hover-bg-dark: #2a3a59;
+    --panel-filter-tag-active-bg-dark: var(--panel-accent-dark); /* Use accent color for active */
+    --panel-filter-tag-active-text-dark: #1c2128; /* Dark text on light blue */
+    --panel-filter-tag-active-border-dark: var(--panel-accent-dark);
+    --panel-keypoints-btn-bg-dark: #1f3d2a; /* Dark green */
+    --panel-keypoints-btn-text-dark: #56d364;
+    --panel-keypoints-btn-border-dark: #2a5a38;
+    --panel-keypoints-btn-hover-bg-dark: #2a5038;
+
+
+    --panel-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+}
+
+/* --- General Body/Panel Styles --- */
+body { font-family: var(--panel-font-family); margin: 0; font-size: 14px; line-height: 1.5; background-color: var(--panel-bg-light); color: var(--panel-text-light); height: 100vh; display: flex; flex-direction: column; transition: background-color 0.2s ease, color 0.2s ease; }
+.panel-container { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
+
+/* --- Header --- */
+.panel-header { padding: 10px 15px; border-bottom: 1px solid var(--panel-border-light); flex-shrink: 0; }
+.panel-header h1 { font-size: 1.3em; font-weight: 600; margin: 0 0 10px 0; color: var(--panel-accent-light); text-align: center; }
+.panel-actions { display: grid; grid-template-columns: repeat(2, minmax(100px, 1fr)); gap: 8px; }
+
+/* --- General Button Styles --- */
+button { padding: 6px 10px; cursor: pointer; border: 1px solid var(--panel-button-border-light); background-color: var(--panel-button-bg-light); color: var(--panel-text-light); border-radius: 6px; font-size: 0.9em; font-weight: 500; text-align: center; transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.1s ease; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; user-select: none; }
+button:hover { background-color: var(--panel-button-hover-bg-light); border-color: var(--panel-button-hover-border-light); }
+button:active { background-color: var(--panel-button-active-bg-light); transform: scale(0.98); }
+
+/* --- Specific Button Styles --- */
+.panel-actions button { /* Inherits general style */ }
+.panel-footer button { /* Inherits general style */ }
+
+
+/* --- Main Content Area --- */
+.panel-content { padding: 15px; flex-grow: 1; overflow-y: auto; }
+.panel-content h2 { font-size: 1.15em; font-weight: 500; margin-top: 0; margin-bottom: 10px; padding-bottom: 5px; border-bottom: 1px solid var(--panel-border-light); color: var(--panel-secondary-text-light); }
+
+/* --- Filter Section Styles --- */
+.panel-filter-section { margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid var(--panel-border-light); }
+.panel-filter-section h3 { margin-top: 0; margin-bottom: 10px; font-size: 1em; font-weight: 600; color: var(--panel-secondary-text-light); }
+.tag-filter-list { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; min-height: 24px; }
+.tag-filter-list i { font-size: 0.9em; color: var(--panel-secondary-text-light); padding: 4px 0; }
+.tag-filter-item { background-color: var(--panel-filter-tag-bg-light); color: var(--panel-filter-tag-text-light); border: 1px solid var(--panel-filter-tag-border-light); padding: 4px 10px; border-radius: 14px; font-size: 0.85em; font-weight: 500; cursor: pointer; transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease; user-select: none; }
+.tag-filter-item:hover { background-color: var(--panel-filter-tag-hover-bg-light); }
+.tag-filter-item.active { background-color: var(--panel-filter-tag-active-bg-light); color: var(--panel-filter-tag-active-text-light); border-color: var(--panel-filter-tag-active-border-light); font-weight: 600; }
+/* ** NEW: Styles for filter action buttons ** */
+.filter-actions { margin-top: 10px; display: flex; gap: 10px; align-items: center; }
+.clear-filter-btn { font-size: 0.85em; padding: 4px 8px; /* Initially hidden via inline style */ }
+.key-points-btn {
+    font-size: 0.85em;
+    padding: 4px 8px;
+    background-color: var(--panel-keypoints-btn-bg-light);
+    color: var(--panel-keypoints-btn-text-light);
+    border-color: var(--panel-keypoints-btn-border-light);
+    font-weight: 600;
+    /* Initially hidden via inline style */
+}
+.key-points-btn:hover {
+     background-color: var(--panel-keypoints-btn-hover-bg-light);
+     border-color: var(--panel-keypoints-btn-border-light);
+}
+
+/* --- Content List Container --- */
+.content-list-container { border: 1px solid var(--panel-border-light); border-radius: 6px; margin-bottom: 15px; }
+.content-list-container p i, .content-list-container .error i { color: var(--panel-secondary-text-light); padding: 10px; display: block; }
+.content-list-container .error i { color: #cf222e; font-weight: 500;}
+/* Style for when summary is displayed */
+.content-list-container.summary-display {
+    padding: 15px;
+    border: 1px dashed var(--panel-accent-light);
+    background-color: var(--panel-hover-bg-light);
+}
+.summary-display h4 { margin-top: 0; margin-bottom: 10px; color: var(--panel-accent-light); }
+.summary-display p { margin-bottom: 10px; white-space: pre-wrap; }
+.summary-display .source-info { font-size: 0.85em; color: var(--panel-secondary-text-light); font-style: italic; margin-top: 15px; display: block; }
+
+
+/* --- Status Message --- */
+.status-message { font-size: 0.9em; padding: 8px 12px; text-align: center; border-radius: 5px; border: 1px solid transparent; min-height: 1.5em; display: none; margin-top: 10px; word-wrap: break-word; }
+.status-message.success { background-color: #e6ffed; color: #1f883d; border-color: #95d7a0; display: block; }
+.status-message.error { background-color: #ffeef0; color: #cf222e; border-color: #f7baba; display: block; }
+.status-message.info { background-color: #eef5ff; color: #0969da; border-color: #bcdfff; display: block; }
+
+/* --- Footer --- */
+.panel-footer { padding: 10px 15px; border-top: 1px solid var(--panel-border-light); flex-shrink: 0; text-align: right; }
+
+/* --- Content Item Styling --- */
+.content-item { border-bottom: 1px solid var(--panel-border-light); font-size: 0.95em; position: relative; transition: background-color 0.15s ease; }
+.content-item:last-child { border-bottom: none; }
+.item-summary { padding: 10px 12px 28px 12px; position: relative; cursor: pointer; }
+.item-summary:hover { background-color: var(--panel-hover-bg-light); }
+.content-item strong { display: block; font-weight: 500; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--panel-accent-light); }
+.content-item .preview { font-size: 0.9em; color: var(--panel-secondary-text-light); margin: 0 0 5px 0; max-height: 3.2em; overflow: hidden; word-break: break-word; line-height: 1.4; }
+.content-item .preview img { max-width: 60px; max-height: 40px; vertical-align: middle; margin-right: 6px; border-radius: 3px; border: 1px solid var(--panel-border-light); object-fit: cover; }
+.content-item span.timestamp { position: absolute; bottom: 8px; left: 12px; font-size: 0.8em; color: #6a737d; }
+.content-item .analysis-status { font-weight: normal; font-size: 0.8em; margin-left: 6px; display: inline-block; vertical-align: middle; }
+.analysis-status.success { color: #1f883d; } .analysis-status.error { color: #cf222e; } .analysis-status.pending { color: #d29922; }
+.content-item .delete-btn { position: absolute; top: 8px; right: 8px; background: none; border: none; color: #6a737d; cursor: pointer; font-size: 1.2em; padding: 2px 5px; line-height: 1; border-radius: 4px; transition: color 0.2s ease, background-color 0.2s ease; z-index: 2; }
+.content-item .delete-btn:hover { color: #cf222e; background-color: #ffeef0; }
+
+/* --- Item Detail View Styles --- */
+.item-details { padding: 10px 15px 15px 15px; margin-top: 0; border-top: 1px dashed var(--panel-border-light); background-color: #fdfdfd; }
+.item-details h4 { margin-top: 15px; margin-bottom: 8px; font-size: 1em; font-weight: 600; color: var(--panel-secondary-text-light); }
+.item-details .detail-content pre { white-space: pre-wrap; word-wrap: break-word; background-color: var(--panel-hover-bg-light); padding: 8px; border-radius: 4px; font-size: 0.9em; max-height: 200px; overflow-y: auto; border: 1px solid var(--panel-border-light); }
+.item-details .detail-analysis pre { background-color: var(--panel-hover-bg-light); padding: 10px; border-radius: 4px; font-family: monospace; font-size: 0.85em; white-space: pre-wrap; word-break: break-all; max-height: 150px; overflow-y: auto; border: 1px solid var(--panel-border-light); }
+.item-details .detail-analysis p { margin-bottom: 8px; font-size: 0.9em; } .item-details .detail-analysis p strong { font-weight: 600; } .item-details .detail-analysis em { color: var(--panel-secondary-text-light); }
+.item-details p.error, .item-details span.error { color: #cf222e; font-weight: 500; }
+.item-details .close-details-btn { display: block; margin-top: 15px; margin-left: auto; font-size: 0.85em; padding: 4px 8px; }
+
+/* --- Tag UI Styles (in Detail View) --- */
+.detail-tags-section { margin-top: 15px; padding-top: 10px; border-top: 1px solid var(--panel-border-light); }
+.detail-tags-section h5 { margin-top: 0; margin-bottom: 8px; font-size: 0.95em; font-weight: 600; color: var(--secondary-color); }
+.tags-list { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; min-height: 20px; }
+.tags-list i { font-size: 0.9em; color: var(--panel-secondary-text-light); }
+.tag-item { display: inline-flex; align-items: center; background-color: var(--panel-tag-bg-light); color: var(--panel-tag-text-light); padding: 3px 8px; border-radius: 12px; font-size: 0.85em; font-weight: 500; line-height: 1.2; }
+.remove-tag-btn { background: none; border: none; color: var(--panel-tag-remove-light); cursor: pointer; margin-left: 4px; padding: 0 2px; font-size: 1.2em; line-height: 1; font-weight: bold; opacity: 0.7; transition: opacity 0.2s ease, color 0.2s ease; }
+.remove-tag-btn:hover { color: var(--panel-tag-remove-hover-light); opacity: 1; }
+.add-tag-controls { display: flex; gap: 6px; margin-top: 10px; }
+.add-tag-input { flex-grow: 1; padding: 5px 8px; border: 1px solid var(--panel-button-border-light); border-radius: 4px; font-size: 0.9em; }
+.add-tag-btn { padding: 5px 10px; font-size: 0.9em; flex-shrink: 0; }
+
+
+/* --- Dark Mode Adaptations --- */
+body.dark-mode { background-color: var(--panel-bg-dark); color: var(--panel-text-dark); }
+body.dark-mode .panel-header { border-bottom-color: var(--panel-border-dark); } body.dark-mode .panel-header h1 { color: var(--panel-accent-dark); }
+body.dark-mode .panel-content h2 { color: var(--panel-secondary-text-dark); border-bottom-color: var(--panel-border-dark); }
+body.dark-mode .content-list-container { border-color: var(--panel-border-dark); } body.dark-mode .content-list-container p i, body.dark-mode .content-list-container .error i { color: var(--panel-secondary-text-dark); } body.dark-mode .content-list-container .error i { color: #ffa198; }
+body.dark-mode button { background-color: var(--panel-button-bg-dark); color: var(--panel-text-dark); border-color: var(--panel-button-border-dark); } body.dark-mode button:hover { background-color: var(--panel-button-hover-bg-dark); border-color: var(--panel-button-hover-border-dark); } body.dark-mode button:active { background-color: var(--panel-button-active-bg-dark); }
+body.dark-mode .status-message.success { background-color: #1f3d2a; color: #56d364; border-color: #2a5a38; } body.dark-mode .status-message.error { background-color: #442c2e; color: #ffa198; border-color: #72343a; } body.dark-mode .status-message.info { background-color: #20304c; color: #79c0ff; border-color: #2d4a77; }
+body.dark-mode .panel-footer { border-top-color: var(--panel-border-dark); }
+body.dark-mode .item-summary:hover { background-color: var(--panel-hover-bg-dark); }
+body.dark-mode .content-item { border-bottom-color: var(--panel-border-dark); } body.dark-mode .content-item strong { color: var(--panel-accent-dark); } body.dark-mode .content-item .preview { color: var(--panel-secondary-text-dark); } body.dark-mode .content-item .preview img { border-color: var(--panel-border-dark); } body.dark-mode .content-item span.timestamp { color: #6e7681; } body.dark-mode .analysis-status.success { color: #56d364; } body.dark-mode .analysis-status.error { color: #ffa198; } body.dark-mode .analysis-status.pending { color: #eac54f; } body.dark-mode .content-item .delete-btn { color: #8b949e; } body.dark-mode .content-item .delete-btn:hover { color: #ffa198; background-color: #442c2e; }
+body.dark-mode .item-details { border-top-color: var(--panel-border-dark); background-color: #22272e; } body.dark-mode .item-details h4 { color: var(--panel-secondary-text-dark); } body.dark-mode .item-details .detail-content pre { background-color: #1c2128; color: var(--panel-text-dark); border-color: var(--panel-border-dark); } body.dark-mode .item-details .detail-analysis pre { background-color: #1c2128; color: var(--panel-text-dark); border-color: var(--panel-border-dark); } body.dark-mode .item-details .detail-analysis em { color: var(--panel-secondary-text-dark); } body.dark-mode .item-details p.error, body.dark-mode .item-details span.error { color: #ffa198; }
+/* Dark Mode Tag UI */
+body.dark-mode .detail-tags-section { border-top-color: var(--panel-border-dark); } body.dark-mode .detail-tags-section h5 { color: var(--panel-secondary-text-dark); } body.dark-mode .tags-list i { color: var(--panel-secondary-text-dark); } body.dark-mode .tag-item { background-color: var(--panel-tag-bg-dark); color: var(--panel-tag-text-dark); } body.dark-mode .remove-tag-btn { color: var(--panel-tag-remove-dark); } body.dark-mode .remove-tag-btn:hover { color: var(--panel-tag-remove-hover-dark); } body.dark-mode .add-tag-input { background-color: #1c2128; border-color: var(--panel-button-border-dark); color: var(--panel-text-dark); } body.dark-mode .add-tag-input:focus { border-color: var(--panel-accent-dark); background-color: #22272e; }
+/* Dark Mode Filter Section */
+body.dark-mode .panel-filter-section { border-bottom-color: var(--panel-border-dark); }
+body.dark-mode .panel-filter-section h3 { color: var(--panel-secondary-text-dark); }
+body.dark-mode .tag-filter-list i { color: var(--panel-secondary-text-dark); }
+body.dark-mode .tag-filter-item { background-color: var(--panel-filter-tag-bg-dark); color: var(--panel-filter-tag-text-dark); border-color: var(--panel-filter-tag-border-dark); }
+body.dark-mode .tag-filter-item:hover { background-color: var(--panel-filter-tag-hover-bg-dark); }
+body.dark-mode .tag-filter-item.active { background-color: var(--panel-filter-tag-active-bg-dark); color: var(--panel-filter-tag-active-text-dark); border-color: var(--panel-filter-tag-active-border-dark); }
+/* Dark Mode Key Points Button */
+body.dark-mode .key-points-btn { background-color: var(--panel-keypoints-btn-bg-dark); color: var(--panel-keypoints-btn-text-dark); border-color: var(--panel-keypoints-btn-border-dark); }
+body.dark-mode .key-points-btn:hover { background-color: var(--panel-keypoints-btn-hover-bg-dark); border-color: var(--panel-keypoints-btn-border-dark); }
+/* Dark Mode Summary Display */
+body.dark-mode .content-list-container.summary-display { border-color: var(--panel-accent-dark); background-color: var(--panel-hover-bg-dark); }
+body.dark-mode .summary-display h4 { color: var(--panel-accent-dark); }
+body.dark-mode .summary-display .source-info { color: var(--panel-secondary-text-dark); }
+
+

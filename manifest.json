@@ -1,0 +1,50 @@
+{
+    "manifest_version": 3,
+    "name": "WebInsight",
+    "version": "0.1.0",
+    "description": "Analyze, manage, and select web content with AI insights.",
+    "options_page": "path/to/your/data_viewer.html",
+    "permissions": [
+      "activeTab",
+      "scripting",
+      "storage",
+      "tabs",
+      "contextMenus",
+      "sidePanel" // Added permission for Side Panel API
+    ],
+    "host_permissions": [
+      "<all_urls>"
+    ],
+    "background": {
+      "service_worker": "js/background.js",
+      "type": "module"
+    },
+    "action": {
+      // "default_popup": "html/popup.html", // Removed popup - action click will now toggle panel by default
+      "default_icon": {
+        "16": "icons/icon16.png",
+        "48": "icons/icon48.png",
+        "128": "icons/icon128.png"
+      }
+      // Optional: Can add "default_title": "Toggle WebInsight Panel"
+    },
+    "options_page": "html/options.html",
+    "icons": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    },
+    "content_scripts": [
+      {
+        "matches": ["<all_urls>"],
+        "js": ["js/content.js"],
+        "css": ["css/content.css"],
+        "run_at": "document_idle"
+      }
+    ],
+    // Define the side panel configuration
+    "side_panel": {
+      "default_path": "html/panel.html" // Path to the HTML file for the side panel
+    }
+  }
+  
