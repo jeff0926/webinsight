@@ -41,7 +41,7 @@ h2 {
 /* --- Action Buttons --- */
 .actions {
     display: grid;
-    grid-template-columns: repeat(2, 1fr); /* 2 columns to accommodate 6 buttons */
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); /* Responsive grid */
     gap: 8px;
 }
 
@@ -112,14 +112,6 @@ button:active {
     display: block;
 }
 
-/* PDF generation status styling */
-.status.info:has-text("Generating PDF"),
-.status.info:contains("Generating PDF") {
-    background-color: #fff3cd;
-    color: #856404;
-    border-color: #ffeeba;
-}
-
 
 /* --- Content List --- */
 .content-list {
@@ -180,15 +172,6 @@ button:active {
     object-fit: cover; /* Scale image nicely */
 }
 
-/* PDF content preview styling */
-.content-item .preview:has-text("📄") {
-    color: #d73027; /* Red color for PDF indicator */
-    font-weight: 500;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
 /* Timestamp */
 .content-item span.timestamp {
     position: absolute;
@@ -230,77 +213,6 @@ button:active {
     background-color: #ffeef0; /* Light red background on hover */
 }
 
-/* --- PDF Preview Styles (for detail views if implemented) --- */
-.pdf-preview {
-    background-color: #f8f9fa;
-    border: 1px solid #e1e4e8;
-    border-radius: 6px;
-    padding: 15px;
-    margin-bottom: 10px;
-}
-
-.pdf-preview p {
-    margin: 5px 0;
-}
-
-.pdf-preview strong {
-    color: #d73027;
-    font-size: 1.1em;
-}
-
-/* PDF action buttons */
-.pdf-actions {
-    margin: 10px 0;
-    display: flex;
-    gap: 10px;
-    flex-wrap: wrap;
-}
-
-.pdf-download-btn,
-.pdf-view-btn {
-    padding: 6px 12px;
-    background-color: #0366d6;
-    color: white;
-    text-decoration: none;
-    border: none;
-    border-radius: 4px;
-    font-size: 0.9em;
-    cursor: pointer;
-    transition: background-color 0.2s ease;
-}
-
-.pdf-download-btn:hover,
-.pdf-view-btn:hover {
-    background-color: #005cc5;
-    text-decoration: none;
-}
-
-.pdf-view-btn {
-    background-color: #28a745;
-}
-
-.pdf-view-btn:hover {
-    background-color: #218838;
-}
-
-/* PDF embed container */
-.pdf-embed-container {
-    margin-top: 15px;
-    border-radius: 4px;
-    overflow: hidden;
-}
-
-.pdf-embed-container iframe {
-    display: block;
-    background-color: white;
-}
-
-/* --- Responsive Design --- */
-@media (max-width: 400px) {
-    .actions {
-        grid-template-columns: 1fr; /* Single column on very small screens */
-    }
-}
 
 /* --- Dark Mode --- */
 @media (prefers-color-scheme: dark) {
@@ -334,14 +246,6 @@ button:active {
     body.dark-mode .status.error { background-color: #442c2e; color: #ffa198; border-color: #72343a; }
     body.dark-mode .status.info { background-color: #20304c; color: #79c0ff; border-color: #2d4a77; }
 
-    /* Dark mode PDF generation status */
-    body.dark-mode .status.info:has-text("Generating PDF"),
-    body.dark-mode .status.info:contains("Generating PDF") {
-        background-color: #3d3017;
-        color: #eac54f;
-        border-color: #5a4a1a;
-    }
-
     body.dark-mode .content-list {
         border-color: #30363d;
         background-color: #22272e; /* Slightly darker list background */
@@ -353,33 +257,14 @@ button:active {
      body.dark-mode .content-item .preview img { border-color: #30363d; }
     body.dark-mode .content-item span.timestamp { color: #6e7681; } /* Darker gray timestamp */
 
-    /* Dark mode PDF preview styling */
-    body.dark-mode .content-item .preview:has-text("📄") {
-        color: #ff6b6b; /* Lighter red for dark mode */
-    }
-
     body.dark-mode .analysis-status.success { color: #56d364; }
     body.dark-mode .analysis-status.error { color: #ffa198; }
     body.dark-mode .analysis-status.pending { color: #eac54f; }
 
     body.dark-mode .content-item .delete-btn { color: #8b949e; }
     body.dark-mode .content-item .delete-btn:hover { color: #ffa198; background-color: #442c2e; }
-
-    /* Dark mode PDF preview elements */
-    body.dark-mode .pdf-preview {
-        background-color: #1c2128;
-        border-color: #30363d;
-    }
-
-    body.dark-mode .pdf-preview strong {
-        color: #ff6b6b; /* Lighter red for dark mode */
-    }
-
-    body.dark-mode .pdf-embed-container iframe {
-        border-color: #30363d;
-        background-color: #22272e;
-    }
 }
 
 /* Apply dark mode based on class only (JS will add/remove class) */
 body.dark-mode { /* Styles defined within @media block above */ }
+

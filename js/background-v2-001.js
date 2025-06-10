@@ -1,9 +1,8 @@
-// js/background.js - Service Worker with Google Drive backup support and PDF functionality
+// js/background.js - Service Worker with Google Drive backup support
 
 // --- Imports ---
 import { initDB, addContentItem, getAllContentItems, updateContentItem, deleteContentItem, addTag, getTagByName, getAllTags, deleteTag, linkTagToContent, unlinkTagFromContent, getTagIdsByContentId, getContentIdsByTagId, getTagsByIds, getContentItemsByIds, getAllContentTags } from './lib/db.js';
 import { analyzeImageWithGemini, analyzeTextWithGemini, getApiKey } from './lib/api.js';
-import { generatePagePDF, pdfToDataUrl, estimatePDFSize, PDFPresets } from './lib/pdf-generator.js';
 
 // --- Constants ---
 const MAX_ITEMS_FOR_SUMMARY = 5;
@@ -61,7 +60,6 @@ chrome.action.onClicked.addListener(async (tab) => {
 
 // --- Context Menu Setup ---
 async function setupContextMenu() {
-    // Existing text selection context menu
     chrome.contextMenus.update("saveSelectionWebInsight", {
          title: "Save selected text to WebInsight", contexts: ["selection"]
      }, () => {
@@ -69,22 +67,6 @@ async function setupContextMenu() {
              console.log("Context menu item 'saveSelectionWebInsight' not found, creating it.");
              chrome.contextMenus.create({ id: "saveSelectionWebInsight", title: "Save selected text to WebInsight", contexts: ["selection"] });
          } else { console.log("Context menu item 'saveSelectionWebInsight' updated/verified successfully."); }
-     });
-
-    // New PDF save context menu
-    chrome.contextMenus.update("savePageAsPDFWebInsight", {
-         title: "Save page as PDF to WebInsight", contexts: ["page"]
-     }, () => {
-         if (chrome.runtime.lastError) {
-             console.log("Context menu item 'savePageAsPDFWebInsight' not found, creating it.");
-             chrome.contextMenus.create({ 
-                id: "savePageAsPDFWebInsight", 
-                title: "Save page as PDF to WebInsight", 
-                contexts: ["page"] 
-            });
-         } else { 
-            console.log("Context menu item 'savePageAsPDFWebInsight' updated/verified successfully."); 
-        }
      });
 }
 
@@ -101,16 +83,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
              }).then(id => console.log(`Context menu selection saved with ID: ${id}`))
                .catch(error => console.error("Error saving selection from context menu:", error));
         } else { console.warn("Context menu clicked, but no selection text or tab info found.", info); }
-    } else if (info.menuItemId === "savePageAsPDFWebInsight") {
-        if (tab && tab.id) {
-            console.log("Context menu PDF save triggered for:", tab.title || tab.url);
-            handleSavePageAsPDF({ preset: 'standard' })
-                .then(id => console.log(`Context menu PDF saved with ID: ${id}`))
-                .catch(error => console.error("Error saving PDF from context menu:", error));
-        } else {
-            console.warn("Context menu PDF clicked, but no valid tab found.", info);
-        }
-    }
+     }
 });
 
 // --- Storage change listener for auto-backup settings ---
@@ -136,11 +109,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             break;
         case "SAVE_SELECTION":
             handleSaveSelection()
-                .then(id => sendResponse({ success: true, id: id }))
-                .catch(error => sendResponse({ success: false, error: error.message }));
-            break;
-        case "SAVE_PAGE_AS_PDF":
-            handleSavePageAsPDF(message.payload)
                 .then(id => sendResponse({ success: true, id: id }))
                 .catch(error => sendResponse({ success: false, error: error.message }));
             break;
@@ -342,100 +310,6 @@ async function handleSaveSelection() {
      } catch (error) { console.error("Error handleSaveSelection:", error); throw error; }
 }
 
-async function handleSavePageAsPDF(options = {}) {
-    console.log("[PDF] Starting page-to-PDF save process");
-    const tab = await getCurrentTab();
-    
-    try {
-        // Use the provided options or default to 'standard' preset
-        const pdfOptions = options.preset ? PDFPresets[options.preset] : PDFPresets.standard;
-        const finalOptions = { ...pdfOptions, ...options };
-        
-        console.log(`[PDF] Generating PDF for tab ${tab.id} with options:`, finalOptions);
-        
-        // Generate the PDF using Chrome DevTools Protocol
-        const pdfBase64 = await generatePagePDF(tab.id, finalOptions);
-        
-        if (!pdfBase64) {
-            throw new Error("PDF generation returned empty data");
-        }
-        
-        // Convert to data URL for storage
-        const pdfDataUrl = pdfToDataUrl(pdfBase64);
-        const fileSize = estimatePDFSize(pdfBase64);
-        
-        console.log(`[PDF] PDF generated successfully. Size: ${Math.round(fileSize / 1024)}KB`);
-        
-        // Get additional page metadata
-        let pageMetadata = {};
-        try {
-            const injectionResults = await chrome.scripting.executeScript({
-                target: { tabId: tab.id },
-                func: () => ({
-                    url: window.location.href,
-                    title: document.title,
-                    description: document.querySelector('meta[name="description"]')?.getAttribute('content') || null,
-                    keywords: document.querySelector('meta[name="keywords"]')?.getAttribute('content') || null,
-                    lang: document.documentElement.lang || null,
-                    characterCount: document.body.innerText?.length || 0
-                })
-            });
-            
-            if (injectionResults && injectionResults[0] && injectionResults[0].result) {
-                pageMetadata = injectionResults[0].result;
-            }
-        } catch (metadataError) {
-            console.warn("[PDF] Could not extract page metadata:", metadataError);
-            pageMetadata = {
-                url: tab.url,
-                title: tab.title || 'Untitled Page',
-                description: null,
-                keywords: null,
-                lang: null,
-                characterCount: 0
-            };
-        }
-        
-        // Create the content item for storage
-        const pdfItem = {
-            type: 'pdf',
-            title: `PDF: ${pageMetadata.title || 'Untitled Page'}`,
-            content: pdfDataUrl,
-            contentType: 'application/pdf',
-            url: pageMetadata.url,
-            
-            // PDF-specific metadata
-            fileSize: fileSize,
-            pdfOptions: finalOptions,
-            
-            // Page metadata
-            pageLang: pageMetadata.lang,
-            pageDescription: pageMetadata.description,
-            pageKeywords: pageMetadata.keywords,
-            characterCount: pageMetadata.characterCount,
-            
-            // Standard fields
-            htmlContent: null, // PDFs don't have HTML content
-            links: [], // Could extract links in future if needed
-            wordCount: null, // PDFs don't have word count like text
-            readingTimeMinutes: null,
-            analysis: null,
-            analysisCompleted: false,
-            analysisFailed: false
-        };
-        
-        console.log("[PDF] Saving PDF item to database");
-        const itemId = await saveContent(pdfItem);
-        
-        console.log(`[PDF] PDF saved successfully with ID: ${itemId}`);
-        return itemId;
-        
-    } catch (error) {
-        console.error("[PDF] Error in handleSavePageAsPDF:", error);
-        throw error;
-    }
-}
-
 async function handleCaptureVisibleTab() {
     const tab = await getCurrentTab();
     if (!tab.windowId) throw new Error("Tab missing window ID.");
@@ -571,14 +445,14 @@ async function saveContent(item) {
             item.wordCount = item.content.split(/\s+/).filter(Boolean).length;
             item.readingTimeMinutes = Math.ceil(item.wordCount / 200);
         } catch (statError) { console.error("Error calculating stats:", statError); item.wordCount = null; item.readingTimeMinutes = null; }
-    } else if (item.type === 'screenshot' || item.type === 'pdf') {
+    } else if (item.type === 'screenshot') {
         item.wordCount = null;
         item.readingTimeMinutes = null;
     }
 
     const logItem = { ...item };
-    if (logItem.content && typeof logItem.content === 'string' && (logItem.content.startsWith('data:image') || logItem.content.startsWith('data:application/pdf'))) {
-        logItem.content = logItem.content.substring(0, 50) + '...[binaryData]';
+    if (logItem.content && typeof logItem.content === 'string' && logItem.content.startsWith('data:image')) {
+        logItem.content = logItem.content.substring(0, 50) + '...[imageData]';
     } else if (logItem.content && typeof logItem.content === 'string') {
         logItem.content = logItem.content.substring(0, 100) + (logItem.content.length > 100 ? '...' : '');
     }
@@ -596,8 +470,7 @@ async function saveContent(item) {
         htmlPreview: logItem.htmlContent,
         analysisType: logItem.analysisType,
         sourceTagIds: logItem.sourceTagIds,
-        sourceItemIds: logItem.sourceItemIds,
-        fileSize: logItem.fileSize
+        sourceItemIds: logItem.sourceItemIds
     });
 
     try {
@@ -691,4 +564,4 @@ chrome.storage.local.get(['autoBackup'], (result) => {
     }
 });
 
-console.log("WebInsight Service Worker (with Google Drive integration and PDF support) started.");
+console.log("WebInsight Service Worker (with Google Drive integration) started.");

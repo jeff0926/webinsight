@@ -9,7 +9,6 @@ const panelContentListEl = document.getElementById('panelContentList');
 const panelStatusMessageEl = document.getElementById('panelStatusMessage');
 const panelOptionsBtn = document.getElementById('panelOptionsBtn');
 const panelSavePageBtn = document.getElementById('panelSavePageBtn');
-const panelSavePageAsPDFBtn = document.getElementById('panelSavePageAsPDFBtn');
 const panelSaveSelectionBtn = document.getElementById('panelSaveSelectionBtn');
 const panelCaptureVisibleBtn = document.getElementById('panelCaptureVisibleBtn');
 const panelCaptureAreaBtn = document.getElementById('panelCaptureAreaBtn');
@@ -45,16 +44,6 @@ function addEventListeners() {
     // Action Buttons (Using reverted logic)
     if (panelSavePageBtn) panelSavePageBtn.addEventListener('click', () => { showStatus("Saving page content...", "info", false); chrome.runtime.sendMessage({ type: "SAVE_PAGE_CONTENT" }, handleActionResponse); });
     else console.warn("Panel Save Page button not found.");
-    
-    if (panelSavePageAsPDFBtn) panelSavePageAsPDFBtn.addEventListener('click', () => { 
-        showStatus("Generating PDF... This may take a moment.", "info", false); 
-        chrome.runtime.sendMessage({ 
-            type: "SAVE_PAGE_AS_PDF", 
-            payload: { preset: 'standard' } 
-        }, handleActionResponse); 
-    });
-    else console.warn("Panel Save Page as PDF button not found.");
-    
     if (panelSaveSelectionBtn) panelSaveSelectionBtn.addEventListener('click', () => { showStatus("Saving selection...", "info", false); chrome.runtime.sendMessage({ type: "SAVE_SELECTION" }, handleActionResponse); });
     else console.warn("Panel Save Selection button not found.");
     if (panelCaptureVisibleBtn) panelCaptureVisibleBtn.addEventListener('click', () => { showStatus("Capturing visible area...", "info", false); chrome.runtime.sendMessage({ type: "CAPTURE_VISIBLE_TAB" }, handleActionResponse); });
@@ -197,11 +186,11 @@ function displayContentItems(items) {
 
 /**
  * Creates HTML element for a single saved item summary in the list.
- * ** MODIFIED: Handles GENERATED_ITEM_TYPE and PDF **
+ * ** MODIFIED: Handles GENERATED_ITEM_TYPE **
  */
 function createContentItemElement(item) {
     // This function uses the structure from the reverted panel.js
-    // ** MODIFICATION: Added handling for GENERATED_ITEM_TYPE and PDF **
+    // ** MODIFICATION: Added handling for GENERATED_ITEM_TYPE **
     const div = document.createElement('div');
     div.className = 'content-item';
     div.dataset.itemId = item.id;
@@ -222,11 +211,6 @@ function createContentItemElement(item) {
             else if (item.analysisFailed === true) analysisStatus = ' <span class="analysis-status error">(Analysis Failed)</span>';
             else if (item.analysis !== undefined && item.analysis !== null) analysisStatus = ' <span class="analysis-status pending">(Analyzing...)</span>';
             else analysisStatus = ' <span class="analysis-status pending">(Analysis Pending)</span>';
-            break;
-        case 'pdf':
-            const fileSizeKB = item.fileSize ? Math.round(item.fileSize / 1024) : 'Unknown';
-            contentPreview = `📄 PDF Document (${fileSizeKB}KB)`;
-            analysisStatus = ''; // PDFs don't have analysis like screenshots
             break;
         case GENERATED_ITEM_TYPE: // ** NEW **
             titlePrefix = '[Generated] ';
@@ -256,11 +240,11 @@ function createContentItemElement(item) {
 
 /**
  * Populates the detail area for a selected item.
- * ** MODIFIED: Handles GENERATED_ITEM_TYPE and PDF **
+ * ** MODIFIED: Handles GENERATED_ITEM_TYPE **
  */
 function displayItemDetails(item, detailElement) {
     // This function uses the structure from the reverted panel.js
-    // ** MODIFICATION: Added handling for GENERATED_ITEM_TYPE and PDF **
+    // ** MODIFICATION: Added handling for GENERATED_ITEM_TYPE **
     detailElement.innerHTML = '<i>Loading details...</i>'; // Clear previous details
 
     let contentHtml = '';
@@ -280,34 +264,6 @@ function displayItemDetails(item, detailElement) {
             ${item.sourceInfo ? `<p><small>Context: ${item.sourceInfo}</small></p>` : ''} `; // Display sourceInfo if available
         analysisHtml = '<p><i>Analysis not applicable for generated items.</i></p>'; // No nested analysis
         metadataHtml = ''; // No original metadata for generated items
-
-    } else if (item.type === 'pdf') {
-        // --- Display for PDF Items ---
-        const fileSizeKB = item.fileSize ? Math.round(item.fileSize / 1024) : 'Unknown';
-        
-        contentHtml = `
-            <div class="pdf-preview">
-                <p><strong>📄 PDF Document</strong></p>
-                <p>File Size: ${fileSizeKB}KB</p>
-                <div class="pdf-actions">
-                    <a href="${item.content}" download="${item.title.replace(/[^a-z0-9]/gi, '_')}.pdf" class="pdf-download-btn">Download PDF</a>
-                    <button onclick="window.open('${item.content}', '_blank')" class="pdf-view-btn">View in New Tab</button>
-                </div>
-                <div class="pdf-embed-container">
-                    <iframe src="${item.content}" width="100%" height="400px" style="border: 1px solid var(--panel-border-light); border-radius: 4px;"></iframe>
-                </div>
-            </div>
-        `;
-        
-        analysisHtml = '<p><i>Analysis not applicable for PDF documents.</i></p>';
-        
-        metadataHtml = `
-            <h4>Source:</h4>
-            <p><small>URL: <a href="${item.url || '#'}" target="_blank" title="${item.url || ''}">${item.url || 'N/A'}</a></small></p>
-            ${item.characterCount ? `<p><small>Original Page Character Count: ${item.characterCount.toLocaleString()}</small></p>` : ''}
-            ${item.pdfOptions ? `<p><small>PDF Settings: ${item.pdfOptions.landscape ? 'Landscape' : 'Portrait'}, Scale: ${(item.pdfOptions.scale || 1) * 100}%</small></p>` : ''}
-            ${item.pageDescription ? `<p><small>Page Description: ${item.pageDescription}</small></p>` : ''}
-        `;
 
     } else if (item.type === 'page' || item.type === 'selection') {
         // --- Display for Page/Selection Items (Reverted Logic) ---
@@ -622,4 +578,5 @@ function updateKeyPointsButtonVisibility() {
 }
 
 
-console.log("WebInsight Panel script loaded and initialized (v8 - Simple Display with PDF support).");
+console.log("WebInsight Panel script loaded and initialized (v8 - Simple Display).");
+

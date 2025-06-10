@@ -2,7 +2,6 @@
 
 // --- DOM Element References ---
 const savePageBtn = document.getElementById('savePageBtn');
-const savePageAsPDFBtn = document.getElementById('savePageAsPDFBtn');
 const saveSelectionBtn = document.getElementById('saveSelectionBtn');
 const captureVisibleBtn = document.getElementById('captureVisibleBtn');
 const captureAreaBtn = document.getElementById('captureAreaBtn');
@@ -18,16 +17,6 @@ savePageBtn.addEventListener('click', () => {
     showStatus("Saving page content...", "info", false); // Show persistent loading message
     // Send message to background script to handle saving
     chrome.runtime.sendMessage({ type: "SAVE_PAGE_CONTENT" }, handleResponse);
-});
-
-// Save Full Page as PDF
-savePageAsPDFBtn.addEventListener('click', () => {
-    showStatus("Generating PDF... This may take a moment.", "info", false);
-    // Send message to background script to handle PDF generation
-    chrome.runtime.sendMessage({ 
-        type: "SAVE_PAGE_AS_PDF", 
-        payload: { preset: 'standard' } // Use standard preset by default
-    }, handleResponse);
 });
 
 // Save Selected Text
@@ -202,11 +191,6 @@ function createContentItemElement(item) {
                  // Analysis not started or field doesn't exist
                  analysisStatus = ' <span class="analysis-status pending">(Analysis Pending)</span>';
             }
-            break;
-        case 'pdf':
-            // Show file size and PDF icon
-            const fileSizeKB = item.fileSize ? Math.round(item.fileSize / 1024) : 'Unknown';
-            contentPreview = `📄 PDF Document (${fileSizeKB}KB)`;
             break;
         default:
             contentPreview = 'Unknown item type';
