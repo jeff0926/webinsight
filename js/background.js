@@ -4,7 +4,7 @@
 import { initDB, addContentItem, getAllContentItems, updateContentItem, deleteContentItem, addTag, getTagByName, getAllTags, deleteTag, linkTagToContent, unlinkTagFromContent, getTagIdsByContentId, getContentIdsByTagId, getTagsByIds, getContentItemsByIds, getAllContentTags } from './lib/db.js';
 import { analyzeImageWithGemini, analyzeTextWithGemini, getApiKey } from './lib/api.js';
 import { generatePagePDF, pdfToDataUrl, estimatePDFSize, PDFPresets } from './lib/pdf-generator.js';
-import { localAI } from './lib/local-ai.js';
+import { localAI } from './lib/local-ai.js'; // This is currently the keyword-based AI
 
 // --- Constants ---
 const MAX_ITEMS_FOR_SUMMARY = 5;
@@ -385,7 +385,8 @@ async function handleSavePageContent() {
         const pageContent = injectionResults[0].result;
         console.log("Page content received:", pageContent.title);
         return await saveContent({ type: 'page', content: pageContent.text, htmlContent: pageContent.html, url: pageContent.url, title: pageContent.title || 'Untitled Page' });
-    } catch (error) { console.error("Error handleSavePageContent:", error); throw error; }
+    }
+    catch (error) { console.error("Error handleSavePageContent:", error); throw error; }
 }
 
 async function handleSaveSelection() {
@@ -604,9 +605,22 @@ async function handleGetKeyPoints(tagId) {
             url: null, pageLang: null, pageDescription: null, pageKeywords: null, links: [], htmlContent: null,
             wordCount: keyPoints.split(/\s+/).filter(Boolean).length,
             readingTimeMinutes: Math.ceil(keyPoints.split(/\s+/).filter(Boolean).length / 200),
-            contentType: null, analysis: null, analysisCompleted: true, analysisFailed: false
+            contentType: null, analysis: null, analysisCompleted: true, analysisFailed: false,
+            // --- NEW: Add the tag to the generated item ---
+            tags: [tagName] // Automatically add the source tag name here
         };
         const newId = await saveContent(newItem);
+
+        // After saving the item, link the tag
+        try {
+            const addedTagId = await addTag(tagName); // Ensure tag exists and get its ID
+            await linkTagToContent(newId, addedTagId); // Link the new item to the tag
+            console.log(`[KeyPoints] Successfully linked generated item ${newId} with tag "${tagName}".`);
+        } catch (tagLinkError) {
+            console.error(`[KeyPoints] Failed to link generated item ${newId} with tag "${tagName}":`, tagLinkError);
+            // Continue execution, but log the error (don't fail the whole operation)
+        }
+        
         console.log(`[KeyPoints] Saved generated key points as new item ID: ${newId}`);
 
         return {
@@ -655,12 +669,27 @@ async function saveContent(item) {
         analysisType: logItem.analysisType,
         sourceTagIds: logItem.sourceTagIds,
         sourceItemIds: logItem.sourceItemIds,
-        fileSize: logItem.fileSize
+        fileSize: logItem.fileSize,
+        // --- NEW: Log tags if present ---
+        tags: logItem.tags
     });
 
     try {
         const itemId = await addContentItem(item);
         console.log(`Item saved with ID: ${itemId}. Type: ${item.type}`);
+
+        // --- NEW: Handle initial tags provided in the item object ---
+        if (item.tags && Array.isArray(item.tags) && item.tags.length > 0) {
+            for (const tagName of item.tags) {
+                try {
+                    const tagId = await addTag(tagName); // Ensure tag exists
+                    await linkTagToContent(itemId, tagId); // Link it
+                    console.log(`Initial tag "${tagName}" linked to item ${itemId}.`);
+                } catch (tagError) {
+                    console.error(`Failed to add/link initial tag "${tagName}" to item ${itemId}:`, tagError);
+                }
+            }
+        }
 
         chrome.storage.local.set({ lastSaveTimestamp: Date.now() }, () => { if (chrome.runtime.lastError) console.error("Error setting lastSaveTimestamp:", chrome.runtime.lastError); else console.log("Set lastSaveTimestamp to trigger UI refresh."); });
 
@@ -859,7 +888,9 @@ async function buildReportHTML(tagName, tagId, items, keyPointsContent, sourceIn
     const introStatement = `
 This report was generated using JC WebInsight c2025, an AI-powered research compilation tool.
 
-JC WebInsight allows users to capture, analyze, and organize web content including full pages, text selections, screenshots, and custom area captures. The extension leverages Google Gemini AI to analyze visual content, extract diagrams, and generate insights from collected materials.
+JC WebInsight allows users to capture, analyze, and organize web content including full pages, text selections,
+ screenshots, and custom area captures. The extension leverages Google Gemini AI to analyze visual content,
+ extract diagrams, and generate insights from collected materials.
 
 This report compiles ${sortedItems.length} items tagged with '${tagName}' collected between ${dateRange}. The following key points summarize the collected research:`;
 

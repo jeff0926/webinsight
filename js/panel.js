@@ -44,6 +44,8 @@ document.addEventListener('DOMContentLoaded', () => {
     loadFilterTags(); // Load available tags for filtering
     loadSavedContent(); // Load all content initially
     addEventListeners();
+    // Check AI status on load
+    checkAIStatus();
 });
 
 // --- Event Listener Setup ---
@@ -95,34 +97,76 @@ function addEventListeners() {
 
     // Listener for clicks within the item list (using event delegation)
     if (panelContentListEl) {
+        console.log("DEBUG: Attaching click listener to panelContentListEl.");
         panelContentListEl.addEventListener('click', (event) => {
+            console.log("DEBUG: Click detected on panelContentListEl.", event.target);
+
             const summaryElement = event.target.closest('.item-summary');
             const itemElement = event.target.closest('.content-item');
-            if (!itemElement) return;
+            
+            if (!itemElement) {
+                console.log("DEBUG: Click not on a .content-item, returning.");
+                return;
+            }
             const itemId = parseInt(itemElement.dataset.itemId, 10);
+            console.log("DEBUG: Clicked item ID:", itemId);
 
             if (event.target.classList.contains('delete-btn')) {
                 event.stopPropagation();
+                console.log("DEBUG: Delete button clicked for item ID:", itemId);
                 const itemTitle = itemElement.querySelector('.item-summary strong')?.textContent || `Item ${itemId}`;
                 deleteItem(itemId, itemTitle);
                 return;
             }
 
+            // Check if the click is on the summary part and not inside already expanded details
             if (summaryElement && !event.target.closest('.item-details')) {
+                console.log("DEBUG: Click is on summary element, attempting to toggle details.");
                 const detailsDiv = itemElement.querySelector('.item-details');
+                
                 if (detailsDiv) {
+                    console.log("DEBUG: Found .item-details div.");
                     const isVisible = detailsDiv.style.display === 'block';
-                    document.querySelectorAll('.item-details').forEach(el => { if (el !== detailsDiv) { el.style.display = 'none'; el.innerHTML = ''; } });
-                    if (isVisible) { detailsDiv.style.display = 'none'; detailsDiv.innerHTML = ''; }
-                    else {
+                    console.log("DEBUG: Current visibility of detailsDiv:", isVisible ? "block" : "none");
+
+                    // Collapse all other expanded items
+                    document.querySelectorAll('.content-item .item-details').forEach(el => { 
+                        if (el !== detailsDiv && el.style.display === 'block') { 
+                            el.style.display = 'none'; 
+                            el.innerHTML = ''; 
+                            console.log("DEBUG: Collapsed another item's details.");
+                        } 
+                    });
+
+                    if (isVisible) {
+                        console.log("DEBUG: Details were visible, collapsing them.");
+                        detailsDiv.style.display = 'none'; 
+                        detailsDiv.innerHTML = ''; 
+                    } else {
+                        console.log("DEBUG: Details were hidden, attempting to expand.");
                         const itemData = currentItemsCache.find(i => i.id === itemId);
-                        if (itemData) { displayItemDetails(itemData, detailsDiv); detailsDiv.style.display = 'block'; } // Use updated details display
-                        else { console.error(`Item data for ID ${itemId} not found.`); detailsDiv.innerHTML = '<p class="error">Error loading details.</p>'; detailsDiv.style.display = 'block'; }
+                        console.log("DEBUG: Found itemData in cache:", !!itemData, "Cache length:", currentItemsCache.length);
+
+                        if (itemData) { 
+                            displayItemDetails(itemData, detailsDiv); 
+                            detailsDiv.style.display = 'block'; 
+                            console.log("DEBUG: Item details displayed and set to 'block'.");
+                        } else { 
+                            console.error(`DEBUG ERROR: Item data for ID ${itemId} not found in currentItemsCache.`); 
+                            detailsDiv.innerHTML = '<p class="error">Error loading details: Item data not found.</p>'; 
+                            detailsDiv.style.display = 'block'; 
+                        }
                     }
+                } else {
+                    console.warn("DEBUG WARNING: .item-details div not found inside .content-item for ID:", itemId);
                 }
+            } else {
+                console.log("DEBUG: Click was not on a summary element or was inside .item-details, not toggling.");
             }
         });
-    } else { console.error("Panel content list element not found for event delegation."); }
+    } else { 
+        console.error("DEBUG ERROR: Panel content list element (ID: panelContentList) not found for event delegation. Item expansion will not work."); 
+    }
 }
 
 // --- Storage & Theme Change Listeners ---
@@ -167,7 +211,7 @@ function loadSavedContent(filterTagId = null) {
     if (filterTagId === null) { currentFilterTagName = null; }
 
     if (!panelContentListEl) { 
-        console.error("Panel content list element not found."); 
+        console.error("DEBUG ERROR: Panel content list element not found in loadSavedContent."); 
         return; 
     }
     
@@ -181,21 +225,21 @@ function loadSavedContent(filterTagId = null) {
     console.log(`🔍 Sending message: ${messageType}`, payload);
     
     chrome.runtime.sendMessage({ type: messageType, payload: payload }, (response) => {
-        console.log("🔍 Response received:", response);
+        console.log("🔍 Response received from background for loadSavedContent:", response);
         
         if (response && response.success && Array.isArray(response.payload)) {
-            console.log("🔍 Setting cache with", response.payload.length, "items");
+            console.log("🔍 Setting cache with", response.payload.length, "items.");
             
             // Force assignment and make sure it sticks
             currentItemsCache = response.payload || [];
-            window.currentItemsCache = currentItemsCache;
+            window.currentItemsCache = currentItemsCache; // For external debugging
             
-            console.log("🔍 Cache after assignment:", currentItemsCache.length, "items");
-            console.log("🔍 Window cache:", window.currentItemsCache?.length);
+            console.log("🔍 currentItemsCache after assignment (internal):", currentItemsCache.length, "items.");
+            console.log("🔍 window.currentItemsCache after assignment (global):", window.currentItemsCache?.length, "items.");
             
             displayContentItems(currentItemsCache);
         } else {
-            console.log("🔍 Error or invalid response, clearing cache");
+            console.log("🔍 Error or invalid response from background, clearing cache.");
             currentItemsCache = [];
             window.currentItemsCache = currentItemsCache;
             
@@ -213,9 +257,12 @@ function loadSavedContent(filterTagId = null) {
  * @param {Array<object>} items - Array of content item objects.
  */
 function displayContentItems(items) {
-     if (!panelContentListEl) return;
+     if (!panelContentListEl) {
+        console.error("DEBUG ERROR: Panel content list element not found in displayContentItems.");
+        return;
+     }
      panelContentListEl.innerHTML = ''; // Clear previous items/loading message
-     // ** REMOVED summary-display class manipulation here **
+     console.log("DEBUG: Displaying", items.length, "content items.");
 
      if (items.length === 0) {
          const message = currentFilterTagId !== null ? 'No items match the selected filter.' : 'No items saved yet.';
@@ -224,10 +271,9 @@ function displayContentItems(items) {
          const sortedItems = items.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
          sortedItems.forEach(item => {
              try {
-                 // ** Use the MODIFIED create function **
                  panelContentListEl.appendChild(createContentItemElement(item));
              } catch (error) {
-                  console.error(`Error creating element for item ${item.id}:`, error);
+                  console.error(`DEBUG ERROR: Error creating element for item ${item.id}:`, error);
                   const errorDiv = document.createElement('div'); errorDiv.className = 'content-item error'; errorDiv.textContent = `Error loading item ${item.id}.`; panelContentListEl.appendChild(errorDiv);
              }
          });
@@ -244,6 +290,7 @@ function createContentItemElement(item) {
     const div = document.createElement('div');
     div.className = 'content-item';
     div.dataset.itemId = item.id;
+    console.log(`DEBUG: Creating content item element for ID: ${item.id}, Type: ${item.type}`);
 
     let contentPreview = '';
     let analysisStatus = '';
@@ -298,8 +345,7 @@ function createContentItemElement(item) {
  * ** MODIFIED: Handles GENERATED_ITEM_TYPE and PDF **
  */
 function displayItemDetails(item, detailElement) {
-    // This function uses the structure from the reverted panel.js
-    // ** MODIFICATION: Added handling for GENERATED_ITEM_TYPE and PDF **
+    console.log(`DEBUG: displayItemDetails called for item ID: ${item.id}, Type: ${item.type}`);
     detailElement.innerHTML = '<i>Loading details...</i>'; // Clear previous details
 
     let contentHtml = '';
@@ -410,10 +456,16 @@ function displayItemDetails(item, detailElement) {
         </div>
         <button class="close-details-btn">Close Details</button>
     `;
+    console.log("DEBUG: Detail view HTML populated.");
 
     // Fetch and display tags for this specific item
     const tagsListElement = detailElement.querySelector('.tags-list');
-    fetchAndDisplayTags(item.id, tagsListElement);
+    if (tagsListElement) {
+        console.log("DEBUG: Calling fetchAndDisplayTags for item ID:", item.id);
+        fetchAndDisplayTags(item.id, tagsListElement);
+    } else {
+        console.warn("DEBUG WARNING: tags-list element not found for item ID:", item.id);
+    }
 
     // Add event listeners for tag controls within this specific detail view
     const addTagInput = detailElement.querySelector('.add-tag-input');
@@ -421,35 +473,46 @@ function displayItemDetails(item, detailElement) {
     if (addTagInput && addTagButton) {
         const handleAddTag = () => {
             const tagName = addTagInput.value.trim();
+            const contentText = item.content; // Get content for AI analysis
+            
             if (tagName) {
-                showStatus(`Adding tag "${tagName}"...`, 'info', false);
-                chrome.runtime.sendMessage(
-                    { type: 'ADD_TAG_TO_ITEM', payload: { contentId: item.id, tagName: tagName } },
-                    (response) => handleTagActionResponse(response, item.id, tagsListElement) // Pass tagsListElement
-                );
+                // User typed a tag - add it directly
+                console.log(`DEBUG: User input tag "${tagName}". Calling enhancedAddTag.`);
+                // Pass the direct element references
+                enhancedAddTag(item.id, tagName, contentText, addTagInput, tagsListElement);
                 addTagInput.value = '';
+            } else {
+                // No input - show AI suggestions if available
+                console.log("DEBUG: No user input tag. Calling enhancedAddTag for suggestions.");
+                // Pass the direct element references
+                enhancedAddTag(item.id, null, contentText, addTagInput, tagsListElement);
             }
         };
         addTagButton.addEventListener('click', handleAddTag);
         addTagInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') handleAddTag(); });
+        console.log("DEBUG: Add tag event listeners attached.");
     }
 
     // Add listener for the close button
     const closeButton = detailElement.querySelector('.close-details-btn');
     if (closeButton) {
         closeButton.onclick = () => {
+            console.log("DEBUG: Close details button clicked for item ID:", item.id);
             detailElement.style.display = 'none';
             detailElement.innerHTML = '';
         };
+        console.log("DEBUG: Close details button listener attached.");
     }
 }
 
 
 /** Fetches and displays tags for an item, adds remove listeners. (Unchanged) */
 function fetchAndDisplayTags(contentId, tagsListElement) {
+    console.log(`DEBUG: fetchAndDisplayTags called for contentId: ${contentId}`);
     if (!tagsListElement) { console.error("Cannot display tags: tagsListElement is null for contentId", contentId); return; }
     tagsListElement.innerHTML = '<i>Loading tags...</i>';
     chrome.runtime.sendMessage({ type: 'GET_TAGS_FOR_ITEM', payload: { contentId: contentId } }, (response) => {
+        console.log(`DEBUG: Response for GET_TAGS_FOR_ITEM for contentId ${contentId}:`, response);
         tagsListElement.innerHTML = ''; // Clear loading
         if (response && response.success && Array.isArray(response.payload)) {
             const tags = response.payload;
@@ -461,12 +524,24 @@ function fetchAndDisplayTags(contentId, tagsListElement) {
 
 /** Handles responses from tag add/remove actions. Refreshes tags for the specific item. (Unchanged) */
 function handleTagActionResponse(response, contentId, tagsListElement) {
+    console.log(`DEBUG: handleTagActionResponse called for contentId ${contentId}:`, response);
     if (response && response.success) { showStatus("Tag action successful!", "success"); console.log(`Refreshing tags for item ${contentId}`); if (tagsListElement && document.body.contains(tagsListElement)) { fetchAndDisplayTags(contentId, tagsListElement); } else { console.warn("Tag list element no longer valid, cannot refresh tags.", contentId); loadFilterTags(); } loadFilterTags(); } else { showStatus(`Tag action failed: ${response?.error || 'Unknown error'}`, "error"); }
 }
 
 /** Sends delete message to background script. (Unchanged) */
 function deleteItem(id, title = '') {
-    const confirmMessage = `Are you sure you want to delete "${title || `Item ${id}`}"?`; if (!confirm(confirmMessage)) return; showStatus(`Deleting item ${id}...`, "info", false); chrome.runtime.sendMessage({ type: "DELETE_ITEM", payload: { id: id } }, (response) => { handleActionResponse(response ? response : { success: false, error: 'No response from background for delete.' }); });
+    console.log(`DEBUG: deleteItem called for ID: ${id}, Title: "${title}"`);
+    const confirmMessage = `Are you sure you want to delete "${title || `Item ${id}`}"?`; 
+    // IMPORTANT: In a real extension, consider replacing `confirm` with a custom modal for better UX.
+    if (!confirm(confirmMessage)) {
+        console.log("DEBUG: Delete cancelled by user.");
+        return;
+    }
+    showStatus(`Deleting item ${id}...`, "info", false); 
+    chrome.runtime.sendMessage({ type: "DELETE_ITEM", payload: { id: id } }, (response) => { 
+        handleActionResponse(response ? response : { success: false, error: 'No response from background for delete.' }); 
+        console.log(`DEBUG: Delete item message sent for ID ${id}. Response handled.`);
+    });
 }
 
 // --- Status Message Management --- (Unchanged)
@@ -738,7 +813,9 @@ async function handleInitializeAI() {
     }
     
     try {
+        console.log("DEBUG: Sending INITIALIZE_LOCAL_AI message to background.");
         const response = await chrome.runtime.sendMessage({ type: "INITIALIZE_LOCAL_AI" });
+        console.log("DEBUG: Response from INITIALIZE_LOCAL_AI:", response);
         
         if (response.success) {
             aiInitialized = true;
@@ -776,7 +853,9 @@ async function handleGenerateEmbeddings() {
     updateAIStatus("processing", "Generating embeddings for existing tags...");
     
     try {
+        console.log("DEBUG: Sending GENERATE_EMBEDDINGS_FOR_TAGS message to background.");
         const response = await chrome.runtime.sendMessage({ type: "GENERATE_EMBEDDINGS_FOR_TAGS" });
+        console.log("DEBUG: Response from GENERATE_EMBEDDINGS_FOR_TAGS:", response);
         
         if (response.success) {
             const { processed, skipped, total } = response.payload;
@@ -819,23 +898,32 @@ function updateAIButtons() {
     }
 }
 
-/** Enhanced tag adding with AI suggestions */
-async function enhancedAddTag(contentId, userInput, contentText) {
-    const tagInput = document.querySelector(`[data-content-id="${contentId}"] .add-tag-input`);
-    const addButton = document.querySelector(`[data-content-id="${contentId}"] .add-tag-btn`);
+/**
+ * Enhanced tag adding with AI suggestions or direct tag addition.
+ * @param {number} contentId - ID of the content item.
+ * @param {string|null} userInput - User-provided tag name, or null if asking for suggestions.
+ * @param {string} contentText - The text content of the item for AI analysis.
+ * @param {HTMLElement} tagInputEl - Direct reference to the tag input element.
+ * @param {HTMLElement} tagsListEl - Direct reference to the tags list element for this item.
+ */
+async function enhancedAddTag(contentId, userInput, contentText, tagInputEl, tagsListEl) {
+    console.log(`DEBUG: enhancedAddTag called for contentId: ${contentId}, userInput: "${userInput}", contentText length: ${contentText?.length}`);
     
-    if (!tagInput || !addButton) return;
+    if (!tagInputEl || !tagsListEl) { // Check passed elements directly
+        console.error("DEBUG ERROR: Missing tagInputEl or tagsListEl in enhancedAddTag call.");
+        return;
+    }
     
     // If user provided input, add it normally
     if (userInput && userInput.trim()) {
-        const normalizedTag = userInput.trim();
+        const normalizedTag = userInput.trim(); // We'll add normalization here later
         showStatus(`Adding tag "${normalizedTag}"...`, 'info', false);
         
         chrome.runtime.sendMessage(
             { type: 'ADD_TAG_TO_ITEM', payload: { contentId: contentId, tagName: normalizedTag } },
             (response) => {
-                const tagsListElement = document.querySelector(`[data-content-id="${contentId}"] .tags-list`);
-                handleTagActionResponse(response, contentId, tagsListElement);
+                // Use the passed tagsListEl directly
+                handleTagActionResponse(response, contentId, tagsListEl);
             }
         );
         return;
@@ -843,33 +931,42 @@ async function enhancedAddTag(contentId, userInput, contentText) {
     
     // If AI is available and we have content, suggest tags
     if (aiInitialized && contentText) {
-        await showTagSuggestions(contentId, contentText, tagInput);
+        console.log("DEBUG: AI initialized and content available, showing tag suggestions.");
+        // Pass the tagInputEl directly to showTagSuggestions
+        await showTagSuggestions(contentId, contentText, tagInputEl, tagsListEl);
     } else {
+        console.log("DEBUG: AI not initialized or content not available for suggestions. Prompting user to type.");
         showStatus("Enter a tag name or initialize AI for suggestions.", "info");
     }
 }
 
-/** Show AI-generated tag suggestions */
-async function showTagSuggestions(contentId, contentText, inputElement) {
+/**
+ * Show AI-generated tag suggestions.
+ * @param {number} contentId - ID of the content item.
+ * @param {string} contentText - The text content of the item for AI analysis.
+ * @param {HTMLElement} inputElement - Direct reference to the tag input element (parent of suggestions).
+ * @param {HTMLElement} tagsListEl - Direct reference to the tags list element to refresh after adding.
+ */
+async function showTagSuggestions(contentId, contentText, inputElement, tagsListEl) {
+    console.log(`DEBUG: showTagSuggestions called for contentId: ${contentId}`);
     try {
         // Show loading state
-        const existingSuggestions = inputElement.parentElement.querySelector('.tag-suggestions');
-        if (existingSuggestions) {
-            existingSuggestions.innerHTML = '<span class="suggestion-loading">🤖 Analyzing content...</span>';
-        } else {
-            const suggestionsDiv = document.createElement('div');
-            suggestionsDiv.className = 'tag-suggestions';
-            suggestionsDiv.innerHTML = '<span class="suggestion-loading">🤖 Analyzing content...</span>';
-            inputElement.parentElement.appendChild(suggestionsDiv);
+        let suggestionsContainer = inputElement.parentElement.querySelector('.tag-suggestions');
+        if (!suggestionsContainer) {
+            suggestionsContainer = document.createElement('div');
+            suggestionsContainer.className = 'tag-suggestions';
+            inputElement.parentElement.appendChild(suggestionsContainer);
         }
+        suggestionsContainer.innerHTML = '<span class="suggestion-loading">🤖 Analyzing content...</span>';
+        console.log("DEBUG: Showing AI suggestion loading indicator.");
         
         // Get AI suggestions
+        console.log("DEBUG: Sending SUGGEST_TAGS_FOR_CONTENT message to background.");
         const response = await chrome.runtime.sendMessage({
             type: "SUGGEST_TAGS_FOR_CONTENT",
             payload: { content: contentText }
         });
-        
-        const suggestionsContainer = inputElement.parentElement.querySelector('.tag-suggestions');
+        console.log("DEBUG: Response from SUGGEST_TAGS_FOR_CONTENT:", response);
         
         if (response.success && response.payload.length > 0) {
             // Display suggestions
@@ -881,6 +978,7 @@ async function showTagSuggestions(contentId, contentText, inputElement) {
                     </button>`
                 ).join('')}
             `;
+            console.log("DEBUG: Displayed", response.payload.length, "AI tag suggestions.");
             
             // Add click handlers for suggestions
             suggestionsContainer.querySelectorAll('.tag-suggestion').forEach(btn => {
@@ -893,11 +991,12 @@ async function showTagSuggestions(contentId, contentText, inputElement) {
                     chrome.runtime.sendMessage(
                         { type: 'ADD_TAG_TO_ITEM', payload: { contentId: targetContentId, tagName: tagName } },
                         (response) => {
-                            const tagsListElement = document.querySelector(`[data-content-id="${targetContentId}"] .tags-list`);
-                            handleTagActionResponse(response, targetContentId, tagsListElement);
+                            // Use the passed tagsListEl directly
+                            handleTagActionResponse(response, targetContentId, tagsListEl);
                             
                             // Remove suggestions after adding
                             suggestionsContainer.remove();
+                            console.log("DEBUG: Suggested tag added, suggestions removed.");
                         }
                     );
                 });
@@ -906,6 +1005,7 @@ async function showTagSuggestions(contentId, contentText, inputElement) {
         } else {
             // No suggestions found
             suggestionsContainer.innerHTML = '<span class="suggestion-empty">🤖 No similar tags found. Try typing a new tag!</span>';
+            console.log("DEBUG: No AI tag suggestions found.");
             
             // Auto-hide after 3 seconds
             setTimeout(() => {
@@ -920,6 +1020,7 @@ async function showTagSuggestions(contentId, contentText, inputElement) {
         const suggestionsContainer = inputElement.parentElement.querySelector('.tag-suggestions');
         if (suggestionsContainer) {
             suggestionsContainer.innerHTML = '<span class="suggestion-error">❌ Failed to get suggestions</span>';
+            console.log("DEBUG: Displayed AI suggestion error.");
         }
     }
 }
@@ -928,36 +1029,15 @@ async function showTagSuggestions(contentId, contentText, inputElement) {
 // Find the existing tag controls event listener setup in displayItemDetails() and modify it:
 
 // Replace the existing handleAddTag function in displayItemDetails() with:
-const handleAddTag = () => {
-    const tagName = addTagInput.value.trim();
-    const contentText = item.content; // Get content for AI analysis
-    
-    if (tagName) {
-        // User typed a tag - add it directly
-        enhancedAddTag(item.id, tagName, contentText);
-        addTagInput.value = '';
-    } else {
-        // No input - show AI suggestions if available
-        enhancedAddTag(item.id, null, contentText);
-    }
-};
-
-// Add initialization check on panel load
-document.addEventListener('DOMContentLoaded', () => {
-    console.log("Panel DOM loaded.");
-    applyPanelTheme();
-    loadFilterTags();
-    loadSavedContent();
-    addEventListeners();
-    
-    // Check AI status
-    checkAIStatus();
-});
+// NOTE: This part needs to be manually inserted/verified in the displayItemDetails function itself.
+// The code block above is just a reference for what the handleAddTag inside displayItemDetails should do.
 
 /** Check AI initialization status on load */
 async function checkAIStatus() {
     try {
+        console.log("DEBUG: Checking AI status on panel load.");
         const response = await chrome.runtime.sendMessage({ type: "GET_LOCAL_AI_STATUS" });
+        console.log("DEBUG: Response from GET_LOCAL_AI_STATUS:", response);
         
         if (response.success) {
             aiInitialized = response.payload.isReady;
@@ -975,7 +1055,6 @@ async function checkAIStatus() {
         updateAIStatus("error", "Failed to check AI status");
     }
 }
-
 
 
 console.log("WebInsight Panel script loaded and initialized (v8 - Simple Display with PDF support).");
