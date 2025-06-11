@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebInsight AI Worker</title>
+    <meta name="description" content="AI processing worker for WebInsight extension">
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        .container {
+            text-align: center;
+            max-width: 500px;
+        }
+        
+        h1 {
+            font-size: 2.5em;
+            margin-bottom: 20px;
+            opacity: 0.9;
+        }
+        
+        .status {
+            font-size: 1.2em;
+            margin: 20px 0;
+            padding: 15px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            backdrop-filter: blur(10px);
+        }
+        
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-top: 3px solid white;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 10px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .hidden {
+            display: none;
+        }
+        
+        .info {
+            font-size: 0.9em;
+            opacity: 0.8;
+            margin-top: 30px;
+            line-height: 1.6;
+        }
+        
+        .tech-details {
+            margin-top: 20px;
+            padding: 15px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.8em;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🤖 WebInsight AI</h1>
+        
+        <div id="status" class="status">
+            <div class="loading"></div>
+            Initializing AI model...
+        </div>
+        
+        <div class="info">
+            <p>This background worker handles AI-powered tag suggestions using a local Universal Sentence Encoder model.</p>
+            <p>The model runs entirely in your browser for privacy and performance.</p>
+            
+            <div id="techDetails" class="tech-details hidden">
+                <div>Model: Universal Sentence Encoder</div>
+                <div>Size: ~25MB (cached after first download)</div>
+                <div>Embedding Dimension: <span id="embeddingDim">Loading...</span></div>
+                <div>Status: <span id="modelStatus">Initializing...</span></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="../js/ai-worker.js"></script>
+    
+    <script>
+        // UI updates for the worker page
+        const statusEl = document.getElementById('status');
+        const techDetailsEl = document.getElementById('techDetails');
+        const embeddingDimEl = document.getElementById('embeddingDim');
+        const modelStatusEl = document.getElementById('modelStatus');
+        
+        // Listen for AI worker events
+        let aiWorkerInstance = null;
+        
+        // Override console.log to capture AI worker logs
+        const originalLog = console.log;
+        console.log = function(...args) {
+            originalLog.apply(console, args);
+            
+            const message = args.join(' ');
+            if (message.includes('[AIWorker]')) {
+                updateStatus(message);
+            }
+        };
+        
+        function updateStatus(message) {
+            if (message.includes('Loading TensorFlow.js')) {
+                statusEl.innerHTML = '<div class="loading"></div>Loading TensorFlow.js...';
+            } else if (message.includes('Loading USE model')) {
+                statusEl.innerHTML = '<div class="loading"></div>Downloading AI model (25MB)...';
+            } else if (message.includes('Model ready')) {
+                statusEl.innerHTML = '✅ AI Model Ready';
+                statusEl.style.background = 'rgba(46, 204, 113, 0.3)';
+                
+                // Extract embedding dimension
+                const dimMatch = message.match(/dimension: (\d+)/);
+                if (dimMatch) {
+                    embeddingDimEl.textContent = dimMatch[1];
+                }
+                
+                modelStatusEl.textContent = 'Ready';
+                techDetailsEl.classList.remove('hidden');
+            } else if (message.includes('Error') || message.includes('Failed')) {
+                statusEl.innerHTML = '❌ AI Initialization Failed';
+                statusEl.style.background = 'rgba(231, 76, 60, 0.3)';
+                modelStatusEl.textContent = 'Error';
+                techDetailsEl.classList.remove('hidden');
+            }
+        }
+        
+        // Auto-hide this tab after successful initialization
+        setTimeout(() => {
+            if (statusEl.textContent.includes('Ready')) {
+                document.body.style.opacity = '0.3';
+                statusEl.innerHTML += '<br><small>Worker running in background</small>';
+            }
+        }, 5000);
+        
+        // Prevent accidental navigation
+        window.addEventListener('beforeunload', (e) => {
+            if (statusEl.textContent.includes('Ready')) {
+                e.preventDefault();
+                e.returnValue = 'AI worker is running. Closing this tab will disable AI features.';
+            }
+        });
+    </script>
+</body>
+</html>

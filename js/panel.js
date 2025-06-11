@@ -19,12 +19,23 @@ const clearTagFilterBtn = document.getElementById('clearTagFilterBtn');
 const getKeyPointsBtn = document.getElementById('getKeyPointsBtn'); // Button for key points
 // ** NEW: Key Points Result Display Area **
 const keyPointsResultDisplayArea = document.getElementById('keyPointsResultDisplay');
+const generateReportBtn = document.getElementById('generateReportBtn'); // Button for generate report
+
+const aiStatusIndicator = document.getElementById('aiStatusIndicator');
+const initializeAIBtn = document.getElementById('initializeAIBtn');
+const generateEmbeddingsBtn = document.getElementById('generateEmbeddingsBtn');
 
 
 // --- State ---
 let currentFilterTagId = null; // Keep track of the active filter tag ID
 let currentFilterTagName = null; // Keep track of the active filter tag name
 let currentItemsCache = []; // Cache the full list of items
+let aiInitialized = false;
+let aiLoading = false;
+
+
+// Make it globally accessible for debugging
+window.currentItemsCache = currentItemsCache;
 
 // --- Initialization ---
 document.addEventListener('DOMContentLoaded', () => {
@@ -46,6 +57,10 @@ function addEventListeners() {
     if (panelSavePageBtn) panelSavePageBtn.addEventListener('click', () => { showStatus("Saving page content...", "info", false); chrome.runtime.sendMessage({ type: "SAVE_PAGE_CONTENT" }, handleActionResponse); });
     else console.warn("Panel Save Page button not found.");
     
+    // Generate Report Button
+    if (generateReportBtn) generateReportBtn.addEventListener('click', handleGenerateReportClick);
+    else console.warn("Generate Report button not found.");
+
     if (panelSavePageAsPDFBtn) panelSavePageAsPDFBtn.addEventListener('click', () => { 
         showStatus("Generating PDF... This may take a moment.", "info", false); 
         chrome.runtime.sendMessage({ 
@@ -70,6 +85,13 @@ function addEventListeners() {
     if (getKeyPointsBtn) getKeyPointsBtn.addEventListener('click', handleGetKeyPointsClick); // Use updated handler
     else console.warn("Get Key Points button not found.");
 
+
+    // Add to addEventListeners() function (around line 60)
+    // AI Control Buttons
+    if (initializeAIBtn) initializeAIBtn.addEventListener('click', handleInitializeAI);
+    else console.warn("Initialize AI button not found.");
+    if (generateEmbeddingsBtn) generateEmbeddingsBtn.addEventListener('click', handleGenerateEmbeddings);
+    else console.warn("Generate Embeddings button not found.");
 
     // Listener for clicks within the item list (using event delegation)
     if (panelContentListEl) {
@@ -139,36 +161,53 @@ function handleActionResponse(response) {
  * @param {number | null} [filterTagId=null] - Optional ID of the tag to filter by. If null, fetches all items.
  */
 function loadSavedContent(filterTagId = null) {
-    currentFilterTagId = filterTagId; // Update current filter state
-    if (filterTagId === null) { currentFilterTagName = null; } // Clear name if filter cleared
+    console.log("🔍 loadSavedContent called with filterTagId:", filterTagId);
+    
+    currentFilterTagId = filterTagId;
+    if (filterTagId === null) { currentFilterTagName = null; }
 
-    if (!panelContentListEl) { console.error("Panel content list element not found."); return; }
+    if (!panelContentListEl) { 
+        console.error("Panel content list element not found."); 
+        return; 
+    }
+    
     panelContentListEl.innerHTML = '<p><i>Loading items...</i></p>';
-    // ** REMOVED summary-display class manipulation here **
     if (panelStatusMessageEl && panelStatusMessageEl.textContent.includes('Loading')) clearStatus();
-    // ** Hide the result display area when loading the list **
     hideKeyPointsResultArea();
 
     const messageType = filterTagId !== null ? "GET_FILTERED_ITEMS_BY_TAG" : "GET_ALL_SAVED_CONTENT";
     const payload = filterTagId !== null ? { tagId: filterTagId } : {};
 
-    console.log(`Sending message: ${messageType}`, payload);
+    console.log(`🔍 Sending message: ${messageType}`, payload);
+    
     chrome.runtime.sendMessage({ type: messageType, payload: payload }, (response) => {
+        console.log("🔍 Response received:", response);
+        
         if (response && response.success && Array.isArray(response.payload)) {
-            currentItemsCache = response.payload || []; // Cache the full data
-            displayContentItems(currentItemsCache); // Display the filtered/all items
+            console.log("🔍 Setting cache with", response.payload.length, "items");
+            
+            // Force assignment and make sure it sticks
+            currentItemsCache = response.payload || [];
+            window.currentItemsCache = currentItemsCache;
+            
+            console.log("🔍 Cache after assignment:", currentItemsCache.length, "items");
+            console.log("🔍 Window cache:", window.currentItemsCache?.length);
+            
+            displayContentItems(currentItemsCache);
         } else {
-            currentItemsCache = []; // Clear cache on error
+            console.log("🔍 Error or invalid response, clearing cache");
+            currentItemsCache = [];
+            window.currentItemsCache = currentItemsCache;
+            
             const errorMsg = response?.error || `Failed to load ${filterTagId !== null ? 'filtered ' : ''}items.`;
             console.error("Panel: Failed to load content:", errorMsg);
             panelContentListEl.innerHTML = `<p class="error"><i>Error loading items: ${errorMsg}</i></p>`;
             showStatus(`Error loading items: ${errorMsg}`, "error", false);
         }
-        // ** Update button visibility AFTER loading content **
+        
         updateKeyPointsButtonVisibility();
     });
 }
-
 /**
  * Renders an array of content items into the list element.
  * @param {Array<object>} items - Array of content item objects.
@@ -546,6 +585,45 @@ function handleGetKeyPointsClick() {
         handleKeyPointsResponse // Use the modified response handler
     );
 }
+/** 6.10 8:51 */
+/** Handles click on the "Generate Report" button */
+function handleGenerateReportClick() {
+    if (currentFilterTagId === null || !generateReportBtn) return;
+
+    console.log(`Requesting PDF report generation for tag ID: ${currentFilterTagId}`);
+    showStatus(`Generating PDF report for tag "${currentFilterTagName || 'selected'}"... This may take a moment.`, 'info', false);
+
+    // Disable button while processing
+    generateReportBtn.disabled = true;
+    generateReportBtn.textContent = 'Generating...';
+
+    chrome.runtime.sendMessage(
+        { type: 'GENERATE_PDF_REPORT_FOR_TAG', payload: { tagId: currentFilterTagId } },
+        handleGenerateReportResponse
+    );
+}
+
+/** Handles the response from the background after requesting PDF report generation */
+function handleGenerateReportResponse(response) {
+    // Re-enable button
+    if (generateReportBtn) {
+        generateReportBtn.disabled = false;
+        updateGenerateReportButtonVisibility(); // Reset text based on current filter state
+    }
+
+    if (response && response.success) {
+        // Success: PDF report was generated and downloaded
+        console.log("PDF report generated successfully:", response.filename);
+        showStatus(`PDF report generated: ${response.filename}`, "success", 5000);
+    } else {
+        // Failure: Show the error message
+        const errorMsg = response?.error || "Failed to generate PDF report.";
+        console.error("PDF report generation failed:", errorMsg);
+        showStatus(`Error: ${errorMsg}`, "error", false);
+    }
+}
+
+
 
 /**
  * Handles the response from the background after requesting key points.
@@ -619,7 +697,285 @@ function updateKeyPointsButtonVisibility() {
     } else {
         getKeyPointsBtn.style.display = 'none';
     }
+    updateGenerateReportButtonVisibility();
 }
+
+/** Updates the visibility and text of the Generate Report button based on filter state */
+function updateGenerateReportButtonVisibility() {
+    if (!generateReportBtn) return;
+    if (currentFilterTagId !== null) {
+        generateReportBtn.textContent = `Generate "${currentFilterTagName || 'Selected'}" Report`;
+        generateReportBtn.style.display = 'inline-block';
+        generateReportBtn.disabled = false; // Ensure enabled
+    } else {
+        generateReportBtn.style.display = 'none';
+    }
+    
+}
+
+// Add these new functions (around line 550, after existing functions)
+
+/** Initialize Local AI functionality */
+async function handleInitializeAI() {
+    if (aiLoading) return;
+    
+    const userConsent = confirm(
+        "Enable AI tag suggestions?\n\n" +
+        "This will download a 25MB AI model for local processing.\n" +
+        "• Suggests relevant tags based on content\n" +
+        "• Processes everything locally (private)\n" +
+        "• One-time download, then works offline\n\n" +
+        "Continue?"
+    );
+    
+    if (!userConsent) return;
+    
+    aiLoading = true;
+    updateAIStatus("loading", "Downloading AI model (25MB)...");
+    if (initializeAIBtn) {
+        initializeAIBtn.disabled = true;
+        initializeAIBtn.textContent = "Loading...";
+    }
+    
+    try {
+        const response = await chrome.runtime.sendMessage({ type: "INITIALIZE_LOCAL_AI" });
+        
+        if (response.success) {
+            aiInitialized = true;
+            updateAIStatus("ready", "AI ready - Tag suggestions enabled");
+            showStatus("AI tag suggestions enabled! Generate embeddings for existing tags to get started.", "success");
+            updateAIButtons();
+        } else {
+            throw new Error(response.error);
+        }
+    } catch (error) {
+        console.error("Failed to initialize AI:", error);
+        updateAIStatus("error", "AI initialization failed");
+        showStatus(`Failed to initialize AI: ${error.message}`, "error");
+    } finally {
+        aiLoading = false;
+        if (initializeAIBtn) {
+            initializeAIBtn.disabled = false;
+            initializeAIBtn.textContent = "Initialize AI";
+        }
+    }
+}
+
+/** Generate embeddings for all existing tags */
+async function handleGenerateEmbeddings() {
+    if (!aiInitialized) {
+        showStatus("Please initialize AI first before generating embeddings.", "error");
+        return;
+    }
+    
+    if (generateEmbeddingsBtn) {
+        generateEmbeddingsBtn.disabled = true;
+        generateEmbeddingsBtn.textContent = "Processing...";
+    }
+    
+    updateAIStatus("processing", "Generating embeddings for existing tags...");
+    
+    try {
+        const response = await chrome.runtime.sendMessage({ type: "GENERATE_EMBEDDINGS_FOR_TAGS" });
+        
+        if (response.success) {
+            const { processed, skipped, total } = response.payload;
+            updateAIStatus("ready", `Embeddings ready (${processed}/${total} tags processed)`);
+            showStatus(`Embeddings generated: ${processed} processed, ${skipped} skipped.`, "success");
+        } else {
+            throw new Error(response.error);
+        }
+    } catch (error) {
+        console.error("Failed to generate embeddings:", error);
+        updateAIStatus("error", "Failed to generate embeddings");
+        showStatus(`Failed to generate embeddings: ${error.message}`, "error");
+    } finally {
+        if (generateEmbeddingsBtn) {
+            generateEmbeddingsBtn.disabled = false;
+            generateEmbeddingsBtn.textContent = "Generate Embeddings";
+        }
+    }
+}
+
+/** Update AI status indicator */
+function updateAIStatus(status, message) {
+    if (!aiStatusIndicator) return;
+    
+    aiStatusIndicator.className = `ai-status ${status}`;
+    aiStatusIndicator.textContent = message;
+    
+    // Show/hide based on status
+    aiStatusIndicator.style.display = status === "hidden" ? "none" : "block";
+}
+
+/** Update AI button visibility and states */
+function updateAIButtons() {
+    if (initializeAIBtn) {
+        initializeAIBtn.style.display = aiInitialized ? "none" : "inline-block";
+    }
+    
+    if (generateEmbeddingsBtn) {
+        generateEmbeddingsBtn.style.display = aiInitialized ? "inline-block" : "none";
+    }
+}
+
+/** Enhanced tag adding with AI suggestions */
+async function enhancedAddTag(contentId, userInput, contentText) {
+    const tagInput = document.querySelector(`[data-content-id="${contentId}"] .add-tag-input`);
+    const addButton = document.querySelector(`[data-content-id="${contentId}"] .add-tag-btn`);
+    
+    if (!tagInput || !addButton) return;
+    
+    // If user provided input, add it normally
+    if (userInput && userInput.trim()) {
+        const normalizedTag = userInput.trim();
+        showStatus(`Adding tag "${normalizedTag}"...`, 'info', false);
+        
+        chrome.runtime.sendMessage(
+            { type: 'ADD_TAG_TO_ITEM', payload: { contentId: contentId, tagName: normalizedTag } },
+            (response) => {
+                const tagsListElement = document.querySelector(`[data-content-id="${contentId}"] .tags-list`);
+                handleTagActionResponse(response, contentId, tagsListElement);
+            }
+        );
+        return;
+    }
+    
+    // If AI is available and we have content, suggest tags
+    if (aiInitialized && contentText) {
+        await showTagSuggestions(contentId, contentText, tagInput);
+    } else {
+        showStatus("Enter a tag name or initialize AI for suggestions.", "info");
+    }
+}
+
+/** Show AI-generated tag suggestions */
+async function showTagSuggestions(contentId, contentText, inputElement) {
+    try {
+        // Show loading state
+        const existingSuggestions = inputElement.parentElement.querySelector('.tag-suggestions');
+        if (existingSuggestions) {
+            existingSuggestions.innerHTML = '<span class="suggestion-loading">🤖 Analyzing content...</span>';
+        } else {
+            const suggestionsDiv = document.createElement('div');
+            suggestionsDiv.className = 'tag-suggestions';
+            suggestionsDiv.innerHTML = '<span class="suggestion-loading">🤖 Analyzing content...</span>';
+            inputElement.parentElement.appendChild(suggestionsDiv);
+        }
+        
+        // Get AI suggestions
+        const response = await chrome.runtime.sendMessage({
+            type: "SUGGEST_TAGS_FOR_CONTENT",
+            payload: { content: contentText }
+        });
+        
+        const suggestionsContainer = inputElement.parentElement.querySelector('.tag-suggestions');
+        
+        if (response.success && response.payload.length > 0) {
+            // Display suggestions
+            suggestionsContainer.innerHTML = `
+                <span class="suggestion-label">🤖 Suggested tags:</span>
+                ${response.payload.map(suggestion => 
+                    `<button class="tag-suggestion" data-tag="${suggestion.name}" data-content-id="${contentId}">
+                        ${suggestion.name} (${(suggestion.similarity * 100).toFixed(0)}%)
+                    </button>`
+                ).join('')}
+            `;
+            
+            // Add click handlers for suggestions
+            suggestionsContainer.querySelectorAll('.tag-suggestion').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    const tagName = btn.dataset.tag;
+                    const targetContentId = parseInt(btn.dataset.contentId);
+                    
+                    showStatus(`Adding suggested tag "${tagName}"...`, 'info', false);
+                    chrome.runtime.sendMessage(
+                        { type: 'ADD_TAG_TO_ITEM', payload: { contentId: targetContentId, tagName: tagName } },
+                        (response) => {
+                            const tagsListElement = document.querySelector(`[data-content-id="${targetContentId}"] .tags-list`);
+                            handleTagActionResponse(response, targetContentId, tagsListElement);
+                            
+                            // Remove suggestions after adding
+                            suggestionsContainer.remove();
+                        }
+                    );
+                });
+            });
+            
+        } else {
+            // No suggestions found
+            suggestionsContainer.innerHTML = '<span class="suggestion-empty">🤖 No similar tags found. Try typing a new tag!</span>';
+            
+            // Auto-hide after 3 seconds
+            setTimeout(() => {
+                if (suggestionsContainer.parentElement) {
+                    suggestionsContainer.remove();
+                }
+            }, 3000);
+        }
+        
+    } catch (error) {
+        console.error("Failed to get tag suggestions:", error);
+        const suggestionsContainer = inputElement.parentElement.querySelector('.tag-suggestions');
+        if (suggestionsContainer) {
+            suggestionsContainer.innerHTML = '<span class="suggestion-error">❌ Failed to get suggestions</span>';
+        }
+    }
+}
+
+// Update the existing addEventListeners function to use enhanced tag adding
+// Find the existing tag controls event listener setup in displayItemDetails() and modify it:
+
+// Replace the existing handleAddTag function in displayItemDetails() with:
+const handleAddTag = () => {
+    const tagName = addTagInput.value.trim();
+    const contentText = item.content; // Get content for AI analysis
+    
+    if (tagName) {
+        // User typed a tag - add it directly
+        enhancedAddTag(item.id, tagName, contentText);
+        addTagInput.value = '';
+    } else {
+        // No input - show AI suggestions if available
+        enhancedAddTag(item.id, null, contentText);
+    }
+};
+
+// Add initialization check on panel load
+document.addEventListener('DOMContentLoaded', () => {
+    console.log("Panel DOM loaded.");
+    applyPanelTheme();
+    loadFilterTags();
+    loadSavedContent();
+    addEventListeners();
+    
+    // Check AI status
+    checkAIStatus();
+});
+
+/** Check AI initialization status on load */
+async function checkAIStatus() {
+    try {
+        const response = await chrome.runtime.sendMessage({ type: "GET_LOCAL_AI_STATUS" });
+        
+        if (response.success) {
+            aiInitialized = response.payload.isReady;
+            
+            if (aiInitialized) {
+                updateAIStatus("ready", "AI ready - Tag suggestions available");
+            } else {
+                updateAIStatus("disabled", "AI disabled - Click to enable tag suggestions");
+            }
+            
+            updateAIButtons();
+        }
+    } catch (error) {
+        console.error("Failed to check AI status:", error);
+        updateAIStatus("error", "Failed to check AI status");
+    }
+}
+
 
 
 console.log("WebInsight Panel script loaded and initialized (v8 - Simple Display with PDF support).");

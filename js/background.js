@@ -4,6 +4,7 @@
 import { initDB, addContentItem, getAllContentItems, updateContentItem, deleteContentItem, addTag, getTagByName, getAllTags, deleteTag, linkTagToContent, unlinkTagFromContent, getTagIdsByContentId, getContentIdsByTagId, getTagsByIds, getContentItemsByIds, getAllContentTags } from './lib/db.js';
 import { analyzeImageWithGemini, analyzeTextWithGemini, getApiKey } from './lib/api.js';
 import { generatePagePDF, pdfToDataUrl, estimatePDFSize, PDFPresets } from './lib/pdf-generator.js';
+import { localAI } from './lib/local-ai.js';
 
 // --- Constants ---
 const MAX_ITEMS_FOR_SUMMARY = 5;
@@ -219,6 +220,63 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     });
             }
             break;
+
+        case "GENERATE_PDF_REPORT_FOR_TAG":
+            const reportTagId = message.payload?.tagId;
+            if (typeof reportTagId !== 'number') { 
+                sendResponse({ success: false, error: "Invalid tagId provided for PDF report generation." }); 
+                isResponseAsync = false; 
+            } else {
+                handleGeneratePDFReport(reportTagId)
+                    .then(result => {
+                        sendResponse(result);
+                    })
+                    .catch(error => {
+                        console.error(`Critical error in handleGeneratePDFReport for tag ${reportTagId}:`, error);
+                        sendResponse({ success: false, error: `Failed to generate PDF report: ${error.message}` });
+                    });
+            }
+            break;
+
+
+        case "INITIALIZE_LOCAL_AI":
+            handleInitializeLocalAI()
+                .then(result => sendResponse(result))
+                .catch(error => sendResponse({ success: false, error: error.message }));
+            break;
+
+        case "SUGGEST_TAGS_FOR_CONTENT":
+            const suggestContent = message.payload?.content;
+            if (!suggestContent || typeof suggestContent !== 'string') {
+                sendResponse({ success: false, error: "Invalid content for tag suggestions." });
+                isResponseAsync = false;
+            } else {
+                handleSuggestTags(suggestContent)
+                    .then(result => sendResponse(result))
+                    .catch(error => sendResponse({ success: false, error: error.message }));
+            }
+            break;
+
+        case "GENERATE_EMBEDDINGS_FOR_TAGS":
+            handleGenerateTagEmbeddings()
+                .then(result => sendResponse(result))
+                .catch(error => sendResponse({ success: false, error: error.message }));
+            break;
+
+        case "GET_LOCAL_AI_STATUS":
+            sendResponse({ 
+                success: true, 
+                payload: {
+                    isReady: localAI.isReady(),
+                    memoryInfo: localAI.getMemoryInfo()
+                }
+            });
+            isResponseAsync = false;
+            break;
+
+
+
+
         // --- Default ---
         default:
             console.warn("Unhandled message type in background:", message.type);
@@ -690,5 +748,601 @@ chrome.storage.local.get(['autoBackup'], (result) => {
         updateAutoBackupSchedule(result.autoBackup);
     }
 });
+
+// Add these functions at the end of background.js (before the final console.log)
+
+/**
+ * Generates a comprehensive PDF report for all items with a specific tag
+ * @param {number} tagId - The tag ID to generate report for
+ * @returns {Promise<object>} Success response with filename or error response
+ */
+async function handleGeneratePDFReport(tagId) {
+    console.log(`[PDFReport] Starting PDF report generation for tag ID: ${tagId}`);
+    
+    try {
+        // Step 1: Get tag name and check for existing key points
+        let tagName = `Tag ${tagId}`;
+        let keyPointsContent = null;
+        let sourceInfo = '';
+        
+        try {
+            const tags = await getTagsByIds([tagId]);
+            if (tags && tags.length > 0 && tags[0].name) {
+                tagName = tags[0].name;
+            }
+        } catch (tagFetchError) {
+            console.warn(`[PDFReport] Could not fetch name for tag ID: ${tagId}`);
+        }
+
+        // Step 2: Get all items for this tag
+        const contentIds = await getContentIdsByTagId(tagId);
+        if (!contentIds || contentIds.length === 0) {
+            return { success: false, error: "No content items found for this tag." };
+        }
+        
+        const allItems = await getContentItemsByIds(contentIds);
+        if (!allItems || allItems.length === 0) {
+            return { success: false, error: "Could not retrieve content items for this tag." };
+        }
+
+        // Step 3: Check for existing key points or generate them
+        const existingKeyPoints = allItems.find(item => 
+            item.type === GENERATED_ITEM_TYPE && 
+            item.analysisType === 'key_points' &&
+            item.sourceTagIds && item.sourceTagIds.includes(tagId)
+        );
+
+        if (existingKeyPoints) {
+            console.log(`[PDFReport] Using existing key points from item ID: ${existingKeyPoints.id}`);
+            keyPointsContent = existingKeyPoints.content;
+            sourceInfo = existingKeyPoints.sourceInfo || `Generated from items tagged "${tagName}" (ID ${tagId}).`;
+        } else {
+            console.log(`[PDFReport] No existing key points found, generating new ones...`);
+            const keyPointsResult = await handleGetKeyPoints(tagId);
+            if (keyPointsResult.success) {
+                keyPointsContent = keyPointsResult.keyPoints;
+                sourceInfo = keyPointsResult.sourceInfo;
+                console.log(`[PDFReport] Generated new key points successfully`);
+            } else {
+                console.warn(`[PDFReport] Failed to generate key points: ${keyPointsResult.error}`);
+                keyPointsContent = "Key points could not be generated for this report.";
+                sourceInfo = `Report generated from ${allItems.length} items tagged "${tagName}" (ID ${tagId}).`;
+            }
+        }
+
+        // Step 4: Build PDF content
+        const reportHTML = await buildReportHTML(tagName, tagId, allItems, keyPointsContent, sourceInfo);
+        
+        // Step 5: Generate PDF from HTML
+        const filename = generateReportFilename(tagName);
+        const pdfResult = await generatePDFFromHTML(reportHTML, filename);
+        
+        console.log(`[PDFReport] PDF report generated successfully: ${filename}`);
+        return { 
+            success: true, 
+            filename: filename,
+            message: `PDF report generated successfully for tag "${tagName}"`
+        };
+
+    } catch (error) {
+        console.error(`[PDFReport] Error generating PDF report for tag ${tagId}:`, error);
+        return { success: false, error: error.message || "An unknown error occurred generating PDF report." };
+    }
+}
+
+/**
+ * Builds the HTML content for the PDF report
+ */
+async function buildReportHTML(tagName, tagId, items, keyPointsContent, sourceInfo) {
+    const now = new Date();
+    const dateRange = getDateRange(items);
+    
+    // Sort items by creation date (current order)
+    const sortedItems = items.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    
+    // Get all unique tags from all items
+    const allTags = new Set();
+    for (const item of sortedItems) {
+        try {
+            const itemTagIds = await getTagIdsByContentId(item.id);
+            if (itemTagIds && itemTagIds.length > 0) {
+                const itemTags = await getTagsByIds(itemTagIds);
+                itemTags.forEach(tag => allTags.add(tag.name));
+            }
+        } catch (error) {
+            console.warn(`[PDFReport] Could not fetch tags for item ${item.id}:`, error);
+        }
+    }
+    
+    const otherTags = Array.from(allTags).filter(tag => tag !== tagName).sort();
+    
+    const introStatement = `
+This report was generated using JC WebInsight c2025, an AI-powered research compilation tool.
+
+JC WebInsight allows users to capture, analyze, and organize web content including full pages, text selections, screenshots, and custom area captures. The extension leverages Google Gemini AI to analyze visual content, extract diagrams, and generate insights from collected materials.
+
+This report compiles ${sortedItems.length} items tagged with '${tagName}' collected between ${dateRange}. The following key points summarize the collected research:`;
+
+    let reportHTML = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JC WebInsight Report - ${tagName}</title>
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; margin: 40px; color: #333; }
+        h1 { color: #0366d6; border-bottom: 2px solid #0366d6; padding-bottom: 10px; }
+        h2 { color: #586069; border-bottom: 1px solid #e1e4e8; padding-bottom: 5px; margin-top: 30px; }
+        h3 { color: #24292e; margin-top: 25px; }
+        .intro-section { background-color: #f6f8fa; padding: 20px; border-radius: 6px; margin-bottom: 30px; }
+        .key-points-section { background-color: #e6ffed; padding: 20px; border-radius: 6px; margin-bottom: 30px; border-left: 4px solid #1f883d; }
+        .source-info { font-size: 0.9em; color: #586069; font-style: italic; margin-top: 15px; }
+        .item-break { font-weight: bold; color: #0366d6; margin: 30px 0 20px 0; font-size: 1.1em; }
+        .item-container { margin-bottom: 40px; border: 1px solid #e1e4e8; border-radius: 6px; padding: 20px; }
+        .item-header { background-color: #f6f8fa; margin: -20px -20px 20px -20px; padding: 15px 20px; border-radius: 6px 6px 0 0; }
+        .item-title { font-size: 1.2em; font-weight: bold; color: #24292e; margin: 0; }
+        .item-meta { font-size: 0.9em; color: #586069; margin: 5px 0; }
+        .item-tags { margin-top: 10px; }
+        .tag { background-color: #0366d6; color: white; padding: 2px 8px; border-radius: 12px; font-size: 0.8em; margin-right: 5px; }
+        .tag-focus { background-color: #1f883d; font-weight: bold; }
+        .content-section { margin: 20px 0; }
+        .ai-analysis { background-color: #fff3cd; padding: 15px; border-radius: 4px; margin: 15px 0; border-left: 4px solid #ffc107; }
+        .screenshot-img { max-width: 100%; height: auto; border: 1px solid #e1e4e8; border-radius: 4px; margin: 10px 0; }
+        .content-text { background-color: #f8f9fa; padding: 15px; border-radius: 4px; font-family: monospace; white-space: pre-wrap; word-wrap: break-word; }
+        .pdf-indicator { color: #d73027; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h1>JC WebInsight Research Report</h1>
+    
+    <div class="intro-section">
+        <h2>Report Overview</h2>
+        <p><strong>Topic:</strong> ${tagName}</p>
+        <p><strong>Generated:</strong> ${now.toLocaleString()}</p>
+        <p><strong>Items Analyzed:</strong> ${sortedItems.length}</p>
+        <p><strong>AI Analysis:</strong> Google Gemini 1.5</p>
+        <br>
+        <p>${introStatement}</p>
+    </div>
+
+    <div class="key-points-section">
+        <h2>Key Points Summary</h2>
+        <div style="white-space: pre-wrap;">${keyPointsContent}</div>
+        <div class="source-info">${sourceInfo}</div>
+    </div>
+
+    <h2>Tags Analysis</h2>
+    <p><strong>Report Focus:</strong> <span class="tag tag-focus">${tagName}</span> (Selected tag)</p>
+    ${otherTags.length > 0 ? `<p><strong>Related Topics:</strong> ${otherTags.map(tag => `<span class="tag">${tag}</span>`).join(' ')}</p>` : ''}
+    <p><strong>Total Items:</strong> ${sortedItems.length} | <strong>Date Range:</strong> ${dateRange}</p>
+
+    <h2>Research Compilation</h2>
+`;
+
+    // Add each item to the report
+    for (let i = 0; i < sortedItems.length; i++) {
+        const item = sortedItems[i];
+        reportHTML += await buildItemHTML(item, i + 1, tagName, tagId);
+    }
+
+    reportHTML += `
+</body>
+</html>`;
+
+    return reportHTML;
+}
+
+/**
+ * Builds HTML for a single content item
+ */
+async function buildItemHTML(item, itemNumber, focusTagName, focusTagId) {
+    const itemDate = new Date(item.createdAt).toLocaleString();
+    
+    // Get tags for this item
+    let itemTags = [];
+    try {
+        const tagIds = await getTagIdsByContentId(item.id);
+        if (tagIds && tagIds.length > 0) {
+            itemTags = await getTagsByIds(tagIds);
+        }
+    } catch (error) {
+        console.warn(`[PDFReport] Could not fetch tags for item ${item.id}`);
+    }
+
+    const tagsHTML = itemTags.map(tag => 
+        `<span class="tag ${tag.name === focusTagName ? 'tag-focus' : ''}">${tag.name}</span>`
+    ).join(' ');
+
+    let contentHTML = '';
+    let analysisHTML = '';
+
+    // Build content based on item type
+    switch (item.type) {
+        case 'page':
+        case 'selection':
+            contentHTML = `<div class="content-text">${escapeHTML(item.content || 'No content available.')}</div>`;
+            if (item.wordCount) {
+                contentHTML += `<p><small>Word Count: ${item.wordCount}, Est. Reading Time: ${item.readingTimeMinutes} min</small></p>`;
+            }
+            break;
+
+        case 'screenshot':
+            contentHTML = `<img src="${item.content}" alt="Screenshot from item ${item.id}" class="screenshot-img">`;
+            
+            if (item.analysis) {
+                analysisHTML = '<div class="ai-analysis"><h4>AI Analysis Summary</h4>';
+                if (item.analysis.description) {
+                    analysisHTML += `<p><strong>Description:</strong> ${escapeHTML(item.analysis.description)}</p>`;
+                }
+                if (item.analysis.diagramData && item.analysis.diagramData !== null && item.analysis.diagramData.contains_diagram !== false) {
+                    if (item.analysis.diagramData.text_summary) {
+                        analysisHTML += `<p><strong>Diagram/Chart Analysis:</strong> ${escapeHTML(item.analysis.diagramData.text_summary)}</p>`;
+                    } else if (typeof item.analysis.diagramData === 'object') {
+                        analysisHTML += `<p><strong>Diagram/Chart:</strong> Structured data detected with key elements identified.</p>`;
+                    }
+                }
+                if (item.analysis.layout && item.analysis.layout !== null && item.analysis.layout.is_webpage_layout !== false) {
+                    if (item.analysis.layout.text_summary) {
+                        analysisHTML += `<p><strong>Layout Analysis:</strong> ${escapeHTML(item.analysis.layout.text_summary)}</p>`;
+                    } else if (typeof item.analysis.layout === 'object') {
+                        analysisHTML += `<p><strong>Layout:</strong> Webpage structure analyzed and key elements identified.</p>`;
+                    }
+                }
+                analysisHTML += '</div>';
+            }
+            break;
+
+        case 'pdf':
+            const fileSizeKB = item.fileSize ? Math.round(item.fileSize / 1024) : 'Unknown';
+            contentHTML = `<p class="pdf-indicator">📄 PDF Document (${fileSizeKB}KB)</p>`;
+            if (item.characterCount) {
+                contentHTML += `<p><small>Original Page Character Count: ${item.characterCount.toLocaleString()}</small></p>`;
+            }
+            break;
+
+        case GENERATED_ITEM_TYPE:
+            contentHTML = `<div class="content-text">${escapeHTML(item.content || 'No content available.')}</div>`;
+            contentHTML += `<p><small><strong>Generated Analysis Type:</strong> ${item.analysisType || 'Unknown'}</small></p>`;
+            if (item.sourceTagIds) {
+                contentHTML += `<p><small><strong>Source Tag IDs:</strong> ${item.sourceTagIds.join(', ')}</small></p>`;
+            }
+            break;
+
+        default:
+            contentHTML = '<p>Unknown content type</p>';
+    }
+
+    return `
+    <div class="item-break">Saved item break --></div>
+    <div class="item-container">
+        <div class="item-header">
+            <div class="item-title">ITEM #${itemNumber}: ${escapeHTML(item.title || `Item ${item.id}`)}</div>
+            <div class="item-meta">
+                <strong>Source:</strong> ${item.url ? `<a href="${item.url}" target="_blank">${escapeHTML(item.url)}</a>` : 'N/A'}<br>
+                <strong>Type:</strong> ${item.type} | <strong>Saved:</strong> ${itemDate}<br>
+                <strong>Tags:</strong> ${tagsHTML || 'None'}
+            </div>
+        </div>
+        <div class="content-section">
+            ${contentHTML}
+            ${analysisHTML}
+        </div>
+    </div>`;
+}
+
+/**
+ * Generates filename for the PDF report
+ */
+function generateReportFilename(tagName) {
+    const now = new Date();
+    const timestamp = now.toISOString().slice(0, 19).replace(/[T:]/g, '-').replace(/-/g, '');
+    const sanitizedTag = tagName; // As discussed, use exact tag match for MVP
+    return `JC-WebInsights-c2025-${sanitizedTag}-${timestamp}.pdf`;
+}
+
+/**
+ * Gets date range string from items
+ */
+function getDateRange(items) {
+    if (!items || items.length === 0) return 'No dates available';
+    
+    const dates = items.map(item => new Date(item.createdAt)).sort((a, b) => a - b);
+    const earliest = dates[0];
+    const latest = dates[dates.length - 1];
+    
+    if (earliest.toDateString() === latest.toDateString()) {
+        return earliest.toLocaleDateString();
+    } else {
+        return `${earliest.toLocaleDateString()} - ${latest.toLocaleDateString()}`;
+    }
+}
+
+/**
+ * Escapes HTML characters for safe display
+ */
+function escapeHTML(text) {
+    if (typeof text !== 'string') return '';
+    return text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+/**
+ * Generates PDF from HTML content using Chrome DevTools Protocol
+ */
+async function generatePDFFromHTML(htmlContent, filename) {
+    try {
+        // Create a data URL from the HTML content
+        const dataUrl = 'data:text/html;charset=utf-8,' + encodeURIComponent(htmlContent);
+        
+        // Create a new tab with the HTML content
+        const tab = await chrome.tabs.create({ url: dataUrl, active: false });
+        
+        // Wait for the tab to load
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        // Generate PDF using the same method as page PDF
+        const pdfOptions = {
+            landscape: false,
+            printBackground: true,
+            scale: 0.8,
+            paperWidth: 8.5,
+            paperHeight: 11,
+            marginTop: 0.5,
+            marginBottom: 0.5,
+            marginLeft: 0.5,
+            marginRight: 0.5
+        };
+        
+        const pdfBase64 = await generatePagePDF(tab.id, pdfOptions);
+        
+        // Close the temporary tab
+        await chrome.tabs.remove(tab.id);
+        
+        if (!pdfBase64) {
+            throw new Error("PDF generation returned empty data");
+        }
+        
+        // Convert to data URL and trigger download
+        const pdfDataUrl = pdfToDataUrl(pdfBase64);
+        
+        // Create download
+        await chrome.downloads.download({
+            url: pdfDataUrl,
+            filename: filename,
+            saveAs: true
+        });
+        
+        console.log(`[PDFReport] PDF downloaded successfully: ${filename}`);
+        return { success: true, filename: filename };
+        
+    } catch (error) {
+        console.error('[PDFReport] Error generating PDF from HTML:', error);
+        throw error;
+    }
+}
+
+
+async function handleInitializeLocalAI() {
+    try {
+        console.log("[LocalAI] Initializing Universal Sentence Encoder...");
+        
+        // Check if already initialized
+        if (localAI.isReady()) {
+            return { success: true, message: "Local AI already initialized." };
+        }
+
+        // Initialize the model (this will download ~25MB on first use)
+        await localAI.initialize();
+        
+        console.log("[LocalAI] Initialization complete");
+        return { 
+            success: true, 
+            message: "Local AI initialized successfully. Tag suggestions are now available." 
+        };
+        
+    } catch (error) {
+        console.error("[LocalAI] Initialization failed:", error);
+        return { 
+            success: false, 
+            error: `Failed to initialize Local AI: ${error.message}` 
+        };
+    }
+}
+
+/**
+ * Suggest tags for given content using local AI
+ */
+async function handleSuggestTags(content) {
+    try {
+        console.log("[LocalAI] Generating tag suggestions for content");
+        
+        // Ensure AI is initialized
+        if (!localAI.isReady()) {
+            return { 
+                success: false, 
+                error: "Local AI not initialized. Please enable AI features first." 
+            };
+        }
+
+        // Get all existing tags with their embeddings
+        const existingTagsWithEmbeddings = await getTagsWithEmbeddings();
+        
+        if (existingTagsWithEmbeddings.length === 0) {
+            return { 
+                success: true, 
+                payload: [], 
+                message: "No existing tags found for comparison." 
+            };
+        }
+
+        // Generate suggestions
+        const suggestions = await localAI.suggestTags(content, existingTagsWithEmbeddings);
+        
+        console.log(`[LocalAI] Generated ${suggestions.length} tag suggestions`);
+        return { 
+            success: true, 
+            payload: suggestions,
+            message: `Found ${suggestions.length} suggested tags.`
+        };
+        
+    } catch (error) {
+        console.error("[LocalAI] Error suggesting tags:", error);
+        return { 
+            success: false, 
+            error: `Failed to suggest tags: ${error.message}` 
+        };
+    }
+}
+
+/**
+ * Generate embeddings for all existing tags
+ */
+async function handleGenerateTagEmbeddings() {
+    try {
+        console.log("[LocalAI] Generating embeddings for existing tags");
+        
+        // Ensure AI is initialized
+        if (!localAI.isReady()) {
+            return { 
+                success: false, 
+                error: "Local AI not initialized. Please enable AI features first." 
+            };
+        }
+
+        // Get all existing tags
+        const allTags = await getAllTags();
+        
+        if (allTags.length === 0) {
+            return { 
+                success: true, 
+                payload: { processed: 0, skipped: 0 },
+                message: "No tags found to process." 
+            };
+        }
+
+        let processed = 0;
+        let skipped = 0;
+
+        // Process tags in batches to avoid overwhelming the system
+        const batchSize = 10;
+        for (let i = 0; i < allTags.length; i += batchSize) {
+            const batch = allTags.slice(i, i + batchSize);
+            
+            for (const tag of batch) {
+                try {
+                    // Check if tag already has embedding
+                    const existingEmbedding = await getTagEmbedding(tag.id);
+                    if (existingEmbedding) {
+                        skipped++;
+                        continue;
+                    }
+
+                    // Generate embedding for tag name
+                    const embedding = await localAI.embed(tag.name);
+                    
+                    // Store embedding in database
+                    await saveTagEmbedding(tag.id, embedding);
+                    processed++;
+                    
+                    console.log(`[LocalAI] Generated embedding for tag: ${tag.name}`);
+                    
+                } catch (error) {
+                    console.error(`[LocalAI] Failed to process tag ${tag.name}:`, error);
+                    skipped++;
+                }
+            }
+            
+            // Small delay between batches to avoid blocking
+            if (i + batchSize < allTags.length) {
+                await new Promise(resolve => setTimeout(resolve, 100));
+            }
+        }
+
+        console.log(`[LocalAI] Embedding generation complete: ${processed} processed, ${skipped} skipped`);
+        return { 
+            success: true, 
+            payload: { processed, skipped, total: allTags.length },
+            message: `Processed ${processed} tags, skipped ${skipped} existing.`
+        };
+        
+    } catch (error) {
+        console.error("[LocalAI] Error generating tag embeddings:", error);
+        return { 
+            success: false, 
+            error: `Failed to generate embeddings: ${error.message}` 
+        };
+    }
+}
+
+/**
+ * Get all tags with their embeddings for similarity comparison
+ */
+async function getTagsWithEmbeddings() {
+    try {
+        const allTags = await getAllTags();
+        const tagsWithEmbeddings = [];
+
+        for (const tag of allTags) {
+            const embedding = await getTagEmbedding(tag.id);
+            if (embedding) {
+                tagsWithEmbeddings.push({
+                    id: tag.id,
+                    name: tag.name,
+                    embedding: embedding
+                });
+            }
+        }
+
+        return tagsWithEmbeddings;
+    } catch (error) {
+        console.error("[LocalAI] Error getting tags with embeddings:", error);
+        return [];
+    }
+}
+
+/**
+ * Get embedding for a specific tag (stored separately for performance)
+ */
+async function getTagEmbedding(tagId) {
+    try {
+        // Get from chrome.storage.local (embeddings can be large)
+        const key = `tag_embedding_${tagId}`;
+        return new Promise((resolve) => {
+            chrome.storage.local.get([key], (result) => {
+                resolve(result[key] || null);
+            });
+        });
+    } catch (error) {
+        console.error(`[LocalAI] Error getting embedding for tag ${tagId}:`, error);
+        return null;
+    }
+}
+
+/**
+ * Save embedding for a tag
+ */
+async function saveTagEmbedding(tagId, embedding) {
+    try {
+        const key = `tag_embedding_${tagId}`;
+        return new Promise((resolve, reject) => {
+            chrome.storage.local.set({ [key]: embedding }, () => {
+                if (chrome.runtime.lastError) {
+                    reject(chrome.runtime.lastError);
+                } else {
+                    resolve();
+                }
+            });
+        });
+    } catch (error) {
+        console.error(`[LocalAI] Error saving embedding for tag ${tagId}:`, error);
+        throw error;
+    }
+}
+
 
 console.log("WebInsight Service Worker (with Google Drive integration and PDF support) started.");

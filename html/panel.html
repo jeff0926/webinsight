@@ -9,7 +9,7 @@
 <body>
     <div class="panel-container">
         <header class="panel-header">
-            <h1>JC WebInsight</h1>
+            <h1>JCz WebInsight</h1>
             <div class="panel-actions">
                 <button id="panelSavePageBtn" title="Save visible text and basic info from the current page">Save Page</button>
                 <button id="panelSavePageAsPDFBtn" title="Save the entire webpage as a PDF document">Save as PDF</button>
@@ -21,6 +21,15 @@
 
         <main class="panel-content">
 
+                        <!-- AI Status Section -->
+            <section class="ai-section">
+                <h3>🤖 AI Tag Assistant</h3>
+                <div id="aiStatusIndicator" class="ai-status disabled">AI disabled - Click to enable tag suggestions</div>
+                <div class="ai-controls">
+                    <button id="initializeAIBtn" class="ai-btn" title="Initialize keyword-based AI for smart tag suggestions">Initialize AI</button>
+                    <button id="generateEmbeddingsBtn" class="ai-btn" style="display: none;" title="Generate keyword profiles for existing tags to enable suggestions">Generate Embeddings</button>
+                </div>
+            </section>
             <section class="panel-filter-section">
                 <h3>Filter by Tag</h3>
                 <div id="tagFilterList" class="tag-filter-list">
@@ -29,8 +38,10 @@
                 <div class="filter-actions">
                     <button id="clearTagFilterBtn" class="clear-filter-btn" style="display: none;">Show All Items</button>
                     <button id="getKeyPointsBtn" class="key-points-btn" style="display: none;" title="Generate key points from items with the selected tag">Get Key Points</button>
+                    <button id="generateReportBtn" class="generate-report-btn" style="display: none;" title="Generate a comprehensive PDF report from items with the selected tag">Generate Report</button>
                 </div>
             </section>
+            
             <h2>Saved Items</h2>
             <div id="keyPointsResultDisplay" class="key-points-result-area">
             </div>

@@ -30,6 +30,10 @@
     --panel-keypoints-btn-hover-bg-light: #c8f0d9;
     --panel-keypoints-result-bg-light: #f8fff9; /* Very light green background */
     --panel-keypoints-result-border-light: #95d7a0;
+    --panel-report-btn-bg-light: #e1f0ff; /* Light blue */
+    --panel-report-btn-text-light: #0969da;
+    --panel-report-btn-border-light: #bcdfff;
+    --panel-report-btn-hover-bg-light: #cce7ff;
 
 
     --panel-bg-dark: #1c2128;
@@ -60,6 +64,10 @@
     --panel-keypoints-btn-hover-bg-dark: #2a5038;
     --panel-keypoints-result-bg-dark: #1f3d2a; /* Dark green background */
     --panel-keypoints-result-border-dark: #2a5a38;
+    --panel-report-btn-bg-dark: #1e3a5f; /* Dark blue */
+    --panel-report-btn-text-dark: #79c0ff;
+    --panel-report-btn-border-dark: #2d4a77;
+    --panel-report-btn-hover-bg-dark: #2a4a70;
 
 
     --panel-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
@@ -88,6 +96,140 @@ button:active { background-color: var(--panel-button-active-bg-light); transform
 .panel-content { padding: 15px; flex-grow: 1; overflow-y: auto; }
 .panel-content h2 { font-size: 1.15em; font-weight: 500; margin-top: 0; margin-bottom: 10px; padding-bottom: 5px; border-bottom: 1px solid var(--panel-border-light); color: var(--panel-secondary-text-light); }
 
+/* --- AI Section Styles --- */
+.ai-section {
+    margin-bottom: 20px;
+    padding-bottom: 15px;
+    border-bottom: 1px solid var(--panel-border-light);
+}
+
+.ai-section h3 {
+    margin-top: 0;
+    margin-bottom: 10px;
+    font-size: 1em;
+    font-weight: 600;
+    color: var(--panel-secondary-text-light);
+}
+
+.ai-status {
+    font-size: 0.9em;
+    padding: 8px 12px;
+    border-radius: 6px;
+    margin-bottom: 10px;
+    font-weight: 500;
+    display: block;
+    text-align: center;
+}
+
+.ai-status.disabled {
+    background-color: #f8f9fa;
+    color: #6c757d;
+    border: 1px solid #dee2e6;
+}
+
+.ai-status.loading {
+    background-color: #fff3cd;
+    color: #856404;
+    border: 1px solid #ffeeba;
+}
+
+.ai-status.processing {
+    background-color: #d1ecf1;
+    color: #0c5460;
+    border: 1px solid #bee5eb;
+}
+
+.ai-status.ready {
+    background-color: #d4edda;
+    color: #155724;
+    border: 1px solid #c3e6cb;
+}
+
+.ai-status.error {
+    background-color: #f8d7da;
+    color: #721c24;
+    border: 1px solid #f5c6cb;
+}
+
+.ai-controls {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.ai-btn {
+    font-size: 0.85em;
+    padding: 6px 12px;
+    background-color: #e7f3ff;
+    color: #0969da;
+    border-color: #bcdfff;
+    font-weight: 500;
+    flex: 1;
+    min-width: 120px;
+}
+
+.ai-btn:hover {
+    background-color: #cce7ff;
+    border-color: #bcdfff;
+}
+
+.ai-btn:disabled {
+    background-color: #f6f8fa;
+    color: #6e7681;
+    border-color: #d0d7de;
+    cursor: not-allowed;
+}
+
+/* --- Enhanced Tag Input Styles --- */
+.tag-suggestions {
+    margin-top: 8px;
+    padding: 8px;
+    background-color: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+    font-size: 0.85em;
+}
+
+.suggestion-label {
+    display: block;
+    font-weight: 600;
+    color: #495057;
+    margin-bottom: 6px;
+}
+
+.tag-suggestion {
+    display: inline-block;
+    background-color: #e7f3ff;
+    color: #0969da;
+    border: 1px solid #bcdfff;
+    padding: 3px 8px;
+    margin: 2px 4px 2px 0;
+    border-radius: 12px;
+    font-size: 0.8em;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+}
+
+.tag-suggestion:hover {
+    background-color: #cce7ff;
+    border-color: #99d3ff;
+}
+
+.suggestion-loading {
+    color: #6c757d;
+    font-style: italic;
+}
+
+.suggestion-empty {
+    color: #6c757d;
+    font-style: italic;
+}
+
+.suggestion-error {
+    color: #dc3545;
+    font-weight: 500;
+}
+
 /* --- Filter Section Styles --- */
 .panel-filter-section { margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid var(--panel-border-light); }
 .panel-filter-section h3 { margin-top: 0; margin-bottom: 10px; font-size: 1em; font-weight: 600; color: var(--panel-secondary-text-light); }
@@ -112,6 +254,20 @@ button:active { background-color: var(--panel-button-active-bg-light); transform
 .key-points-btn:hover {
      background-color: var(--panel-keypoints-btn-hover-bg-light);
      border-color: var(--panel-keypoints-btn-border-light);
+}
+
+.generate-report-btn {
+    font-size: 0.85em;
+    padding: 4px 8px;
+    background-color: var(--panel-report-btn-bg-light);
+    color: var(--panel-report-btn-text-light);
+    border-color: var(--panel-report-btn-border-light);
+    font-weight: 600;
+    /* Initially hidden via inline style */
+}
+.generate-report-btn:hover {
+     background-color: var(--panel-report-btn-hover-bg-light);
+     border-color: var(--panel-report-btn-border-light);
 }
 
 /* --- Key Points Result Display Area --- */
@@ -298,6 +454,86 @@ body.dark-mode .item-details { border-top-color: var(--panel-border-dark); backg
 /* Dark Mode Tag UI */
 body.dark-mode .detail-tags-section { border-top-color: var(--panel-border-dark); } body.dark-mode .detail-tags-section h5 { color: var(--panel-secondary-text-dark); } body.dark-mode .tags-list i { color: var(--panel-secondary-text-dark); } body.dark-mode .tag-item { background-color: var(--panel-tag-bg-dark); color: var(--panel-tag-text-dark); } body.dark-mode .remove-tag-btn { color: var(--panel-tag-remove-dark); } body.dark-mode .remove-tag-btn:hover { color: var(--panel-tag-remove-hover-dark); } body.dark-mode .add-tag-input { background-color: #1c2128; border-color: var(--panel-button-border-dark); color: var(--panel-text-dark); } body.dark-mode .add-tag-input:focus { border-color: var(--panel-accent-dark); background-color: #22272e; }
 
+/* Dark Mode AI Section */
+body.dark-mode .ai-section { border-bottom-color: var(--panel-border-dark); }
+body.dark-mode .ai-section h3 { color: var(--panel-secondary-text-dark); }
+
+body.dark-mode .ai-status.disabled {
+    background-color: #22272e;
+    color: #8b949e;
+    border-color: #30363d;
+}
+
+body.dark-mode .ai-status.loading {
+    background-color: #3d3017;
+    color: #eac54f;
+    border-color: #5a4a1a;
+}
+
+body.dark-mode .ai-status.processing {
+    background-color: #1e3a5f;
+    color: #79c0ff;
+    border-color: #2d4a77;
+}
+
+body.dark-mode .ai-status.ready {
+    background-color: #1f3d2a;
+    color: #56d364;
+    border-color: #2a5a38;
+}
+
+body.dark-mode .ai-status.error {
+    background-color: #442c2e;
+    color: #ffa198;
+    border-color: #72343a;
+}
+
+body.dark-mode .ai-btn {
+    background-color: #1e3a5f;
+    color: #79c0ff;
+    border-color: #2d4a77;
+}
+
+body.dark-mode .ai-btn:hover {
+    background-color: #2a4a70;
+    border-color: #2d4a77;
+}
+
+body.dark-mode .ai-btn:disabled {
+    background-color: #22272e;
+    color: #6e7681;
+    border-color: #30363d;
+}
+
+body.dark-mode .tag-suggestions {
+    background-color: #22272e;
+    border-color: var(--panel-border-dark);
+}
+
+body.dark-mode .suggestion-label {
+    color: var(--panel-text-dark);
+}
+
+body.dark-mode .tag-suggestion {
+    background-color: #1e3a5f;
+    color: #79c0ff;
+    border-color: #2d4a77;
+}
+
+body.dark-mode .tag-suggestion:hover {
+    background-color: #2a4a70;
+    border-color: #2d4a77;
+}
+
+body.dark-mode .suggestion-loading,
+body.dark-mode .suggestion-empty {
+    color: var(--panel-secondary-text-dark);
+}
+
+body.dark-mode .suggestion-error {
+    color: #ffa198;
+}
+
 /* Dark Mode Filter Section */
 body.dark-mode .panel-filter-section { border-bottom-color: var(--panel-border-dark); }
 body.dark-mode .panel-filter-section h3 { color: var(--panel-secondary-text-dark); }
@@ -309,6 +545,10 @@ body.dark-mode .tag-filter-item.active { background-color: var(--panel-filter-ta
 /* Dark Mode Key Points Button */
 body.dark-mode .key-points-btn { background-color: var(--panel-keypoints-btn-bg-dark); color: var(--panel-keypoints-btn-text-dark); border-color: var(--panel-keypoints-btn-border-dark); }
 body.dark-mode .key-points-btn:hover { background-color: var(--panel-keypoints-btn-hover-bg-dark); border-color: var(--panel-keypoints-btn-border-dark); }
+
+/* Dark Mode Generate Report Button */
+body.dark-mode .generate-report-btn { background-color: var(--panel-report-btn-bg-dark); color: var(--panel-report-btn-text-dark); border-color: var(--panel-report-btn-border-dark); }
+body.dark-mode .generate-report-btn:hover { background-color: var(--panel-report-btn-hover-bg-dark); border-color: var(--panel-report-btn-border-dark); }
 
 /* Dark Mode Key Points Result Area */
 body.dark-mode .key-points-result-area {

@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebInsight Settings</title>
+    <link rel="stylesheet" href="../css/options.css">
+</head>
+<body>
+    <div class="container">
+        <h1>WebInsight Settings</h1>
+
+        <section class="settings-section">
+            <h2>API Configuration</h2>
+            <div class="setting">
+                <label for="apiKey">Google Gemini API Key:</label>
+                <input type="password" id="apiKey" name="apiKey" placeholder="Enter your API key" aria-describedby="apiKeyHelp">
+                <p id="apiKeyHelp" class="help-text">
+                    Your API key enables image analysis features. It is stored locally in your browser's storage and is required for visual analysis.
+                    <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer">Get an API Key from Google AI Studio</a>.
+                    <br><strong>Security Note:</strong> While stored locally, browser storage is not perfectly secure. For production use, a backend solution is recommended.
+                </p>
+            </div>
+        </section>
+
+        <section class="settings-section">
+            <h2>Google Drive Integration</h2>
+            <div class="setting">
+                <label for="googleClientId">Google OAuth Client ID:</label>
+                <input type="text" id="googleClientId" name="googleClientId" placeholder="Enter your Google OAuth Client ID" aria-describedby="googleClientIdHelp">
+                <p id="googleClientIdHelp" class="help-text">
+                    Required for Google Drive backup and sync features. 
+                    <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener noreferrer">Get a Client ID from Google Cloud Console</a>.
+                    <br><strong>Setup:</strong> Create an OAuth 2.0 Client ID and enable the Google Drive API.
+                </p>
+            </div>
+            <div class="setting">
+                <div class="google-drive-status">
+                    <p id="driveConnectionStatus" class="connection-status">Not connected</p>
+                    <div class="drive-actions">
+                        <button id="connectDriveBtn" class="drive-btn">Connect to Google Drive</button>
+                        <button id="disconnectDriveBtn" class="drive-btn" style="display: none;">Disconnect</button>
+                        <button id="testDriveBtn" class="drive-btn" style="display: none;">Test Connection</button>
+                    </div>
+                </div>
+            </div>
+            <div class="setting">
+                <label for="autoBackup">Automatic Backup:</label>
+                <select id="autoBackup" name="autoBackup">
+                    <option value="disabled">Disabled</option>
+                    <option value="daily">Daily</option>
+                    <option value="weekly">Weekly</option>
+                    <option value="monthly">Monthly</option>
+                </select>
+                <p class="help-text">Automatically backup your WebInsight data to Google Drive at the specified interval.</p>
+            </div>
+            <div class="setting">
+                <div class="backup-actions">
+                    <button id="manualBackupBtn" class="backup-btn" disabled>Create Backup Now</button>
+                    <button id="restoreBackupBtn" class="backup-btn" disabled>Restore from Backup</button>
+                    <button id="viewBackupsBtn" class="backup-btn" disabled>View Backups</button>
+                </div>
+            </div>
+        </section>
+
+        <section class="settings-section">
+            <h2>Appearance</h2>
+            <div class="setting">
+                <label for="themeSelect">Theme:</label>
+                <select id="themeSelect" name="themeSelect">
+                    <option value="system">System Default</option>
+                    <option value="light">Light</option>
+                    <option value="dark">Dark</option>
+                </select>
+                 <p class="help-text">Choose the visual theme for the extension popup and options page.</p>
+            </div>
+        </section>
+
+        <div class="actions">
+             <button id="saveSettingsBtn">Save Settings</button>
+             <div id="statusMessage" class="status" aria-live="polite"></div>
+        </div>
+
+        <!-- Google Drive Backup Modal -->
+        <div id="backupModal" class="modal" style="display: none;">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 id="modalTitle">Google Drive Backups</h3>
+                    <button class="modal-close" id="closeModal">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div id="modalContent">
+                        <!-- Dynamic content will be inserted here -->
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button id="modalCancelBtn" class="modal-btn">Cancel</button>
+                    <button id="modalActionBtn" class="modal-btn primary" style="display: none;">Action</button>
+                </div>
+            </div>
+        </div>
+
+        </div> 
+    <script src="../js/options.js"></script>
+</body>
+</html>
