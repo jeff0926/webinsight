@@ -1,25 +1,65 @@
-// js/options.js - Logic for the settings page
+// js/options.js
+// This script manages the WebInsight extension's settings page (options.html).
+// It allows users to:
+// 1. Input and save their Google Gemini API key.
+// 2. Select a visual theme for the extension (light, dark, or system default).
+// The API key is stored in `chrome.storage.local` for security (not synced).
+// The theme preference is stored in `chrome.storage.sync` to be consistent across devices.
+// The script also handles applying the selected theme to the options page itself and
+// displaying status messages to the user.
 
 // --- DOM Element References ---
+/**
+ * Input field for the Google Gemini API key.
+ * @type {HTMLInputElement}
+ */
 const apiKeyInput = document.getElementById('apiKey');
-const themeSelect = document.getElementById('themeSelect'); // Changed ID to themeSelect
+
+/**
+ * Select element for choosing the extension's theme.
+ * @type {HTMLSelectElement}
+ */
+const themeSelect = document.getElementById('themeSelect');
+
+/**
+ * Button to save the configured settings.
+ * @type {HTMLButtonElement}
+ */
 const saveSettingsBtn = document.getElementById('saveSettingsBtn');
+
+/**
+ * Element used to display status messages (e.g., "Settings saved", "Error").
+ * @type {HTMLElement}
+ */
 const statusMessageEl = document.getElementById('statusMessage');
 
 // --- Initialization ---
 
-// Load saved settings when the page opens
+/**
+ * Loads saved settings when the options page DOM is fully loaded.
+ * Populates the API key input and theme select element with stored values.
+ * Also applies the currently saved theme to the options page itself.
+ */
 document.addEventListener('DOMContentLoaded', loadSettings);
 
-// Add listener for the save button
-saveSettingsBtn.addEventListener('click', saveSettings);
+/**
+ * Attaches an event listener to the "Save Settings" button.
+ */
+if (saveSettingsBtn) {
+    saveSettingsBtn.addEventListener('click', saveSettings);
+} else {
+    console.error("WebInsight Options: Save Settings button not found in DOM.");
+}
 
-// Add listener for system theme changes to update UI dynamically if 'system' is selected
+/**
+ * Listens for changes in the operating system's preferred color scheme.
+ * If the extension's theme is set to 'system', this will dynamically update
+ * the options page theme to match the system change.
+ */
 window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', event => {
-    // Only re-apply if the current setting is 'system'
     if (themeSelect.value === 'system') {
-        console.log("System theme changed, re-applying theme to options page.");
-        applyTheme('system');
+        console.log("WebInsight Options: System theme changed, re-applying theme to options page.");
+        applyTheme('system'); // Re-apply the theme based on the new system preference.
     }
 });
 
@@ -27,74 +67,80 @@ window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', eve
 // --- Core Functions ---
 
 /**
- * Loads settings from chrome.storage and populates the form fields.
- * Applies the loaded theme to the options page.
+ * Loads settings from `chrome.storage` and populates the form fields on the options page.
+ * API key is loaded from `chrome.storage.local`.
+ * Theme preference is loaded from `chrome.storage.sync`.
+ * After loading, it applies the theme to the options page.
  */
 function loadSettings() {
-    console.log("Loading settings...");
-    // Use chrome.storage.local for sensitive data like API keys
+    console.log("WebInsight Options: Loading settings...");
+
+    // Load API key from local storage.
     chrome.storage.local.get(['geminiApiKey'], (localResult) => {
         if (chrome.runtime.lastError) {
-             console.error("Error loading API key:", chrome.runtime.lastError);
-             showStatus("Error loading API key.", "error", false);
+             console.error("WebInsight Options: Error loading API key:", chrome.runtime.lastError);
+             showStatus("Error loading API key. Check browser console.", "error", false);
         } else if (localResult.geminiApiKey) {
             apiKeyInput.value = localResult.geminiApiKey;
-            console.log("API Key loaded.");
+            console.log("WebInsight Options: API Key loaded from local storage.");
         } else {
-             console.log("API Key not set.");
+             console.log("WebInsight Options: Gemini API Key is not set in local storage.");
         }
     });
 
-    // Use chrome.storage.sync for preferences like theme (syncs across devices)
+    // Load theme preference from sync storage.
     chrome.storage.sync.get(['theme'], (syncResult) => {
          if (chrome.runtime.lastError) {
-             console.error("Error loading theme:", chrome.runtime.lastError);
-             showStatus("Error loading theme setting.", "error", false);
-             applyTheme('system'); // Apply default theme on error
+             console.error("WebInsight Options: Error loading theme setting:", chrome.runtime.lastError);
+             showStatus("Error loading theme setting. Check browser console.", "error", false);
+             applyTheme('system'); // Default to system theme on error.
          } else {
-            const loadedTheme = syncResult.theme || 'system'; // Default to 'system' if not set
+            const loadedTheme = syncResult.theme || 'system'; // Default to 'system' if not previously set.
             themeSelect.value = loadedTheme;
-            console.log(`Theme loaded: ${loadedTheme}`);
-            applyTheme(loadedTheme); // Apply theme to the page itself
+            console.log(`WebInsight Options: Theme loaded from sync storage: ${loadedTheme}`);
+            applyTheme(loadedTheme); // Apply the loaded theme to the options page.
          }
     });
 }
 
 /**
- * Saves the current form values to chrome.storage.
+ * Saves the current values from the form fields (API key and theme) to `chrome.storage`.
+ * The API key is saved to `chrome.storage.local`.
+ * The theme is saved to `chrome.storage.sync`.
+ * Displays status messages to the user indicating success or failure.
  */
 function saveSettings() {
-    console.log("Saving settings...");
-    showStatus("Saving...", "info", false); // Show saving indicator
+    console.log("WebInsight Options: Attempting to save settings...");
+    showStatus("Saving settings...", "info", false); // Indicate that saving is in progress.
 
     const apiKey = apiKeyInput.value.trim();
     const theme = themeSelect.value;
 
-    // --- Validate API Key (Basic Check) ---
-    // Add more robust validation if needed (e.g., length, pattern)
+    // Basic validation for API Key (presence). More complex validation could be added.
     if (!apiKey) {
-         // Optionally warn, but allow saving an empty key to clear it
-         console.warn("API Key field is empty.");
-         // showStatus("API Key is empty. Analysis features will be disabled.", "error");
-         // return; // Uncomment to prevent saving empty key
+         console.warn("WebInsight Options: API Key field is empty. It will be saved as empty, disabling related AI features.");
+         // Optionally, show a persistent warning if an empty key is saved,
+         // or prevent saving an empty key if it's mandatory for core functionality.
+         // showStatus("Warning: API Key is empty. AI analysis features will be disabled.", "error", false);
     }
 
-    // --- Save API Key to Local Storage ---
+    // Save API Key to local storage.
     chrome.storage.local.set({ geminiApiKey: apiKey }, () => {
         if (chrome.runtime.lastError) {
-            console.error("Error saving API Key:", chrome.runtime.lastError);
-            showStatus(`Error saving API Key: ${chrome.runtime.lastError.message}`, "error");
+            console.error("WebInsight Options: Error saving API Key to local storage:", chrome.runtime.lastError);
+            showStatus(`Error saving API Key: ${chrome.runtime.lastError.message}`, "error", false);
         } else {
-            console.log("API Key saved successfully.");
-            // --- Save Theme to Sync Storage (Chained after API key save) ---
+            console.log("WebInsight Options: API Key saved successfully to local storage.");
+            // Chain theme saving to occur after API key saving attempt.
             chrome.storage.sync.set({ theme: theme }, () => {
                  if (chrome.runtime.lastError) {
-                     console.error("Error saving theme:", chrome.runtime.lastError);
-                     showStatus(`API Key saved, but error saving theme: ${chrome.runtime.lastError.message}`, "error");
+                     console.error("WebInsight Options: Error saving theme to sync storage:", chrome.runtime.lastError);
+                     // Notify that API key might have saved but theme failed.
+                     showStatus(`API Key saved, but an error occurred while saving theme: ${chrome.runtime.lastError.message}`, "error", false);
                  } else {
-                    console.log("Theme saved successfully.");
-                    showStatus("Settings saved successfully!", "success");
-                    applyTheme(theme); // Apply theme immediately to the options page
+                    console.log("WebInsight Options: Theme saved successfully to sync storage.");
+                    showStatus("Settings saved successfully!", "success", true); // Auto-clear success message.
+                    applyTheme(theme); // Apply the newly saved theme to the options page immediately.
                  }
             });
         }
@@ -102,46 +148,56 @@ function saveSettings() {
 }
 
 /**
- * Applies the selected theme (light/dark) to the options page body by adding/removing a class.
+ * Applies the selected theme (light, dark, or system) to the options page's body element
+ * by adding or removing the 'dark-mode' CSS class.
+ *
  * @param {'light' | 'dark' | 'system'} theme - The theme setting to apply.
+ *        If 'system', it respects the operating system's preferred color scheme.
  */
 function applyTheme(theme) {
     const body = document.body;
-    // Determine if dark mode should be active
+    // Determine if dark mode should be active based on selection or system preference.
     const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
     const useDarkMode = theme === 'dark' || (theme === 'system' && prefersDark);
 
     if (useDarkMode) {
         body.classList.add('dark-mode');
-        console.log("Applying dark mode to options page.");
+        console.log("WebInsight Options: Applied dark mode to options page.");
     } else {
         body.classList.remove('dark-mode');
-        console.log("Applying light mode to options page.");
+        console.log("WebInsight Options: Applied light mode to options page.");
     }
 }
 
 
 /**
- * Displays a status message to the user on the options page.
- * @param {string} message - The text message to display.
- * @param {'info' | 'success' | 'error'} type - The type of message (controls styling).
- * @param {boolean} [autoClear=true] - Whether the message should disappear automatically.
+ * Displays a status message (info, success, or error) to the user on the options page.
+ * The message can be set to auto-clear after a few seconds.
+ *
+ * @param {string} message - The text message to be displayed.
+ * @param {'info' | 'success' | 'error'} [type="info"] - The type of message, which controls its styling.
+ * @param {boolean} [autoClear=true] - Whether the message should automatically disappear after a delay.
  */
 function showStatus(message, type = "info", autoClear = true) {
-    if (!statusMessageEl) return;
+    if (!statusMessageEl) {
+        console.error("WebInsight Options: Status message element not found in DOM. Cannot display status:", message);
+        return;
+    }
 
     statusMessageEl.textContent = message;
-    statusMessageEl.className = `status ${type}`; // Reset classes and add type
-    statusMessageEl.style.display = 'block'; // Make visible
+    statusMessageEl.className = `status ${type}`; // Apply class for styling (e.g., 'status success').
+    statusMessageEl.style.display = 'block';      // Make the status message element visible.
 
-    // Clear the message after a delay if autoClear is true
+    // If autoClear is true, set a timeout to hide the message.
     if (autoClear) {
         setTimeout(() => {
-             if (statusMessageEl.textContent === message) { // Avoid clearing newer messages
-                 statusMessageEl.style.display = 'none';
-                 statusMessageEl.textContent = '';
-                 statusMessageEl.className = 'status'; // Reset class
+             // Only clear if the current message is still the one we set,
+             // to avoid clearing a newer message that might have appeared.
+             if (statusMessageEl.textContent === message) {
+                 statusMessageEl.style.display = 'none'; // Hide the element.
+                 statusMessageEl.textContent = '';       // Clear its text content.
+                 statusMessageEl.className = 'status';   // Reset class.
              }
-        }, 3500); // Clear after 3.5 seconds
+        }, 3500); // Default auto-clear delay: 3.5 seconds.
     }
 }

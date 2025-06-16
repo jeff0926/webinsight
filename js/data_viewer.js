@@ -1,117 +1,178 @@
-// js/data_viewer.js - Logic for the IndexedDB data viewer page
+// js/data_viewer.js
+// This script provides the logic for the "Data Viewer" page of the WebInsight extension.
+// Its primary purpose is to display raw data from the extension's IndexedDB database,
+// allowing users or developers to inspect the stored content items, tags, and their relationships.
+// It also includes functionality to export this data as JSON files.
 
 // --- DOM References ---
+/**
+ * The HTML `<code>` element where the JSON representation of content items will be displayed.
+ * @type {HTMLElement | null}
+ */
 const contentItemsCodeEl = document.getElementById('contentItemsJson');
+
+/**
+ * The HTML `<code>` element where the JSON representation of tags will be displayed.
+ * @type {HTMLElement | null}
+ */
 const tagsCodeEl = document.getElementById('tagsJson');
+
+/**
+ * The HTML `<code>` element where the JSON representation of content-tag relationships (junction table) will be displayed.
+ * @type {HTMLElement | null}
+ */
 const contentTagsCodeEl = document.getElementById('contentTagsJson');
+
+/**
+ * The button element used to refresh/reload all data displayed on the page.
+ * @type {HTMLButtonElement | null}
+ */
 const refreshBtn = document.getElementById('refreshDataBtn');
-// Get references to all export buttons
-const exportBtns = document.querySelectorAll('.exportBtn'); // Get all export buttons
+
+/**
+ * A NodeList of all buttons with the class 'exportBtn'. These buttons trigger JSON export
+ * for their respective data sections.
+ * @type {NodeListOf<HTMLButtonElement>}
+ */
+const exportBtns = document.querySelectorAll('.exportBtn');
 
 // --- Functions ---
 
-/** Fetches and displays data for all stores */
+/**
+ * Fetches and displays data for all relevant IndexedDB stores.
+ * It sets a "Loading..." message in each display area and then calls
+ * `fetchStoreData` for each store type (content items, tags, content-tag links).
+ */
 function loadAllData() {
-    console.log("Loading all data for viewer...");
-    // Set loading states
-    if (contentItemsCodeEl) contentItemsCodeEl.textContent = 'Loading...';
-    if (tagsCodeEl) tagsCodeEl.textContent = 'Loading...';
-    if (contentTagsCodeEl) contentTagsCodeEl.textContent = 'Loading...';
+    console.log("WebInsight Data Viewer: Loading all data...");
+    // Set loading states for each data display area.
+    if (contentItemsCodeEl) contentItemsCodeEl.textContent = 'Loading content items...';
+    if (tagsCodeEl) tagsCodeEl.textContent = 'Loading tags...';
+    if (contentTagsCodeEl) contentTagsCodeEl.textContent = 'Loading content-tag links...';
 
-    // Fetch data for each store via background script
-    // Using the correct message types based on previous context/assumptions
-    fetchStoreData('GET_ALL_SAVED_CONTENT', contentItemsCodeEl); //
-    fetchStoreData('GET_ALL_TAGS', tagsCodeEl); //
-    fetchStoreData('GET_ALL_CONTENT_TAGS', contentTagsCodeEl); //
+    // Fetch data for each store by sending messages to the background script.
+    // Message types correspond to those handled by the background script for data retrieval.
+    fetchStoreData('GET_ALL_SAVED_CONTENT', contentItemsCodeEl);
+    fetchStoreData('GET_ALL_TAGS', tagsCodeEl);
+    fetchStoreData('GET_ALL_CONTENT_TAGS', contentTagsCodeEl);
 }
 
 /**
- * Helper function to fetch data for a specific store and display it.
- * @param {string} messageType - The message type to send to the background script.
- * @param {HTMLElement} targetElement - The <code> element to display the JSON in.
+ * Helper function to fetch data for a specific IndexedDB store (via a message to the background script)
+ * and display it as a formatted JSON string in the specified target HTML element.
+ *
+ * @param {string} messageType - The message type to send to the background script
+ *                               (e.g., 'GET_ALL_SAVED_CONTENT'). This determines which data is fetched.
+ * @param {HTMLElement} targetElement - The HTML `<code>` element where the fetched data (as JSON)
+ *                                      should be displayed.
  */
 function fetchStoreData(messageType, targetElement) {
-    if (!targetElement) return; // Exit if element doesn't exist
+    if (!targetElement) {
+        console.error(`WebInsight Data Viewer: Target element for ${messageType} is null.`);
+        return;
+    }
 
-    chrome.runtime.sendMessage({ type: messageType }, (response) => { //
-        if (response && response.success && Array.isArray(response.payload)) { //
-            // Format data as indented JSON string
-            const jsonData = JSON.stringify(response.payload, null, 2); // 2 spaces indentation
-            targetElement.textContent = jsonData; //
-            targetElement.style.color = ''; // Reset color on success
+    chrome.runtime.sendMessage({ type: messageType }, (response) => {
+        if (response && response.success && Array.isArray(response.payload)) {
+            // Successfully fetched data. Format as an indented JSON string.
+            const jsonData = JSON.stringify(response.payload, null, 2); // Indent with 2 spaces for readability.
+            targetElement.textContent = jsonData;
+            targetElement.style.color = ''; // Reset text color (in case it was red from a previous error).
         } else {
-            // Handle errors
-            const errorMsg = response?.error || `Failed to load data for ${messageType}.`; //
-            console.error(`Error fetching data for ${messageType}:`, errorMsg); //
-            targetElement.textContent = `Error: ${errorMsg}`; //
-            targetElement.style.color = 'red'; // Indicate error visually
+            // Handle errors or unsuccessful response.
+            const errorMsg = response?.error || `Failed to load data for ${messageType}. Response was invalid.`;
+            console.error(`WebInsight Data Viewer: Error fetching data for ${messageType}:`, errorMsg);
+            targetElement.textContent = `Error: ${errorMsg}`;
+            targetElement.style.color = 'red'; // Display error message in red.
         }
     });
 }
 
 /**
- * Creates a JSON file from data and triggers a download.
- * @param {Array|Object} data - The data to export.
- * @param {string} filename - The desired filename (e.g., 'data.json').
+ * Creates a JSON file from the provided data object/array and triggers a browser download.
+ *
+ * @param {Array<object>|object} data - The data to be stringified and included in the JSON file.
+ * @param {string} filename - The desired filename for the downloaded file (e.g., 'contentItems.json').
  */
 function downloadJson(data, filename) {
-    const jsonString = JSON.stringify(data, null, 2); // Pretty print JSON
+    // Stringify the data with pretty printing (null, 2 for indentation).
+    const jsonString = JSON.stringify(data, null, 2);
+    // Create a Blob with the JSON string and set its MIME type.
     const blob = new Blob([jsonString], { type: 'application/json' });
+    // Create an object URL for the Blob.
     const url = URL.createObjectURL(blob);
+
+    // Create a temporary anchor element to trigger the download.
     const a = document.createElement('a');
     a.href = url;
-    a.download = filename;
-    document.body.appendChild(a); // Append anchor to body
-    a.click(); // Simulate click to trigger download
-    document.body.removeChild(a); // Remove anchor from body
-    URL.revokeObjectURL(url); // Free up memory
-    console.log(`Data export triggered for download as ${filename}`);
+    a.download = filename; // Set the download attribute to the desired filename.
+    document.body.appendChild(a); // Append to body to make it clickable.
+    a.click(); // Programmatically click the anchor to start the download.
+    document.body.removeChild(a); // Clean up by removing the anchor.
+    URL.revokeObjectURL(url); // Release the object URL to free up resources.
+    console.log(`WebInsight Data Viewer: Data export triggered for download as ${filename}`);
 }
 
 /**
- * Fetches data for the specified store and triggers a download.
- * @param {Event} event - The click event object.
+ * Handles click events on "Export JSON" buttons.
+ * It reads `data-messagetype` and `data-filename` attributes from the clicked button
+ * to determine which data to fetch (via background script) and what to name the downloaded file.
+ *
+ * @param {MouseEvent} event - The click event object from an export button.
  */
 function handleExportClick(event) {
-    const button = event.target;
-    const messageType = button.dataset.messagetype; // Get from data attribute
-    const filename = button.dataset.filename;    // Get from data attribute
+    const button = /** @type {HTMLButtonElement} */ (event.target);
+    const messageType = button.dataset.messagetype; // Custom data attribute for message type.
+    const filename = button.dataset.filename;       // Custom data attribute for filename.
 
     if (!messageType || !filename) {
-        console.error("Export button is missing data-messagetype or data-filename attribute.");
+        console.error("WebInsight Data Viewer: Export button is missing 'data-messagetype' or 'data-filename' attribute.");
+        alert("Error: Export configuration missing on button.");
         return;
     }
 
-    console.log(`Export requested for ${messageType}...`);
-    button.textContent = 'Exporting...'; // Provide feedback
-    button.disabled = true; // Disable button during export
+    console.log(`WebInsight Data Viewer: Export requested for data type: ${messageType}`);
+    button.textContent = 'Exporting...'; // Provide user feedback.
+    button.disabled = true;             // Disable button during the process.
 
-    // Fetch the data specifically for export
+    // Send message to background script to fetch the specific data for export.
     chrome.runtime.sendMessage({ type: messageType }, (response) => {
         if (response && response.success && Array.isArray(response.payload)) {
-            // On success, trigger the download
+            // On successful data retrieval, trigger the download.
             downloadJson(response.payload, filename);
         } else {
-            // Handle errors
+            // Handle errors during data fetching.
             const errorMsg = response?.error || `Failed to fetch data for export (${messageType}).`;
-            console.error(`Export Error for ${messageType}:`, errorMsg);
-            alert(`Error exporting data: ${errorMsg}`); // Notify user
+            console.error(`WebInsight Data Viewer: Export Error for ${messageType}:`, errorMsg);
+            alert(`Error exporting data: ${errorMsg}`); // Notify user via alert.
         }
-        // Re-enable button and reset text regardless of success/failure
+        // Re-enable the button and reset its text, regardless of success or failure.
         button.textContent = 'Export JSON';
         button.disabled = false;
     });
 }
 
 // --- Event Listeners ---
-document.addEventListener('DOMContentLoaded', loadAllData); // Load data when page loads
+/**
+ * Attaches an event listener to load all data when the DOM is fully loaded.
+ */
+document.addEventListener('DOMContentLoaded', loadAllData);
+
+/**
+ * Attaches an event listener to the "Refresh Data" button, if it exists.
+ */
 if (refreshBtn) {
-    refreshBtn.addEventListener('click', loadAllData); // Reload data on button click
+    refreshBtn.addEventListener('click', loadAllData);
+} else {
+    console.warn("WebInsight Data Viewer: Refresh Data button (refreshDataBtn) not found.");
 }
 
-// Attach listeners to all export buttons
+/**
+ * Attaches click event listeners to all "Export JSON" buttons found on the page.
+ */
 exportBtns.forEach(btn => {
     btn.addEventListener('click', handleExportClick);
 });
 
-console.log("Data viewer script loaded."); //
+// Log to confirm that the data viewer script has loaded.
+console.log("WebInsight Data Viewer: Script loaded and event listeners attached.");
