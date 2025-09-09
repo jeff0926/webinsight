@@ -1,0 +1,568 @@
+/* css/options.css */
+
+/* --- Base Styles --- */
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+    margin: 0;
+    padding: 20px;
+    background-color: #f0f2f5; /* Slightly off-white background */
+    color: #1d2129; /* Dark text */
+    font-size: 14px;
+    line-height: 1.6;
+    transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.container {
+    max-width: 700px; /* Max width for content */
+    margin: 20px auto; /* Center the container */
+    background-color: #ffffff; /* White background for the card */
+    padding: 25px 30px;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08); /* Soft shadow */
+    border: 1px solid #e1e4e8; /* Subtle border */
+}
+
+/* --- Headings --- */
+h1 {
+    text-align: center;
+    font-size: 1.8em;
+    font-weight: 600;
+    margin-top: 0;
+    margin-bottom: 25px;
+    color: #0366d6; /* Primary blue */
+}
+
+h2 {
+    font-size: 1.3em;
+    font-weight: 500;
+    margin-top: 25px;
+    margin-bottom: 15px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #e1e4e8; /* Separator */
+    color: #333;
+}
+h2:first-of-type {
+    margin-top: 0; /* No top margin for the first section header */
+}
+
+/* --- Settings Sections & Individual Settings --- */
+.settings-section {
+    margin-bottom: 25px;
+}
+
+.setting {
+    margin-bottom: 20px;
+}
+
+label {
+    display: block;
+    margin-bottom: 6px;
+    font-weight: 500; /* Slightly bolder labels */
+    color: #444;
+}
+
+input[type="password"],
+input[type="text"], /* Add if needed */
+select {
+    width: 100%;
+    padding: 10px 12px; /* Comfortable padding */
+    border: 1px solid #ccd0d5; /* Standard border color */
+    border-radius: 6px;
+    box-sizing: border-box; /* Include padding and border in element's total width and height */
+    font-size: 1em;
+    background-color: #f5f6f7; /* Subtle background for inputs */
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+input[type="password"]:focus,
+input[type="text"]:focus,
+select:focus {
+    border-color: #0366d6; /* Highlight focus with blue border */
+    box-shadow: 0 0 0 2px rgba(3, 102, 214, 0.2); /* Subtle focus ring */
+    outline: none; /* Remove default outline */
+    background-color: #fff;
+}
+
+.help-text {
+    font-size: 0.9em;
+    color: #606770; /* Subdued help text color */
+    margin-top: 8px;
+    line-height: 1.4;
+}
+.help-text a {
+    color: #0366d6;
+    text-decoration: none;
+}
+.help-text a:hover {
+    text-decoration: underline;
+}
+.help-text strong { /* Security note emphasis */
+    color: #c0392b; /* Reddish color for warning */
+}
+
+/* --- Google Drive Specific Styles --- */
+.google-drive-status {
+    padding: 15px;
+    border: 1px solid #e1e4e8;
+    border-radius: 6px;
+    background-color: #f8f9fa;
+}
+
+.connection-status {
+    font-weight: 500;
+    margin: 0 0 10px 0;
+    padding: 8px 12px;
+    border-radius: 4px;
+    text-align: center;
+}
+
+.connection-status.connected {
+    background-color: #e6ffed;
+    color: #1f883d;
+    border: 1px solid #95d7a0;
+}
+
+.connection-status.disconnected {
+    background-color: #ffeef0;
+    color: #cf222e;
+    border: 1px solid #f7baba;
+}
+
+.connection-status.connecting {
+    background-color: #fff8e1;
+    color: #d29922;
+    border: 1px solid #f4d03f;
+}
+
+.drive-actions, .backup-actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-top: 10px;
+}
+
+.drive-btn, .backup-btn {
+    padding: 8px 16px;
+    border: 1px solid #d1d5da;
+    background-color: #f6f8fa;
+    color: #24292e;
+    border-radius: 6px;
+    font-size: 0.9em;
+    cursor: pointer;
+    transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+
+.drive-btn:hover, .backup-btn:hover {
+    background-color: #f3f4f6;
+    border-color: #c9d1d9;
+}
+
+.drive-btn:disabled, .backup-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.drive-btn.primary, .backup-btn.primary {
+    background-color: #0366d6;
+    color: white;
+    border-color: #0366d6;
+}
+
+.drive-btn.primary:hover, .backup-btn.primary:hover {
+    background-color: #005cc5;
+    border-color: #005cc5;
+}
+
+/* --- Modal Styles --- */
+.modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.modal-content {
+    background-color: white;
+    border-radius: 8px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+    max-width: 600px;
+    width: 90%;
+    max-height: 80vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.modal-header {
+    padding: 20px 25px 15px;
+    border-bottom: 1px solid #e1e4e8;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.modal-header h3 {
+    margin: 0;
+    font-size: 1.2em;
+    color: #333;
+}
+
+.modal-close {
+    background: none;
+    border: none;
+    font-size: 1.5em;
+    cursor: pointer;
+    color: #666;
+    padding: 0;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+}
+
+.modal-close:hover {
+    background-color: #f0f0f0;
+    color: #333;
+}
+
+.modal-body {
+    padding: 20px 25px;
+    overflow-y: auto;
+    flex-grow: 1;
+}
+
+.modal-footer {
+    padding: 15px 25px 20px;
+    border-top: 1px solid #e1e4e8;
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
+.modal-btn {
+    padding: 8px 16px;
+    border: 1px solid #d1d5da;
+    background-color: #f6f8fa;
+    color: #24292e;
+    border-radius: 6px;
+    font-size: 0.9em;
+    cursor: pointer;
+    transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+
+.modal-btn:hover {
+    background-color: #f3f4f6;
+    border-color: #c9d1d9;
+}
+
+.modal-btn.primary {
+    background-color: #0366d6;
+    color: white;
+    border-color: #0366d6;
+}
+
+.modal-btn.primary:hover {
+    background-color: #005cc5;
+    border-color: #005cc5;
+}
+
+/* Backup list styles */
+.backup-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.backup-item {
+    padding: 12px;
+    border: 1px solid #e1e4e8;
+    border-radius: 6px;
+    margin-bottom: 10px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background-color: #f8f9fa;
+}
+
+.backup-info {
+    flex-grow: 1;
+}
+
+.backup-name {
+    font-weight: 500;
+    color: #333;
+    margin-bottom: 4px;
+}
+
+.backup-date {
+    font-size: 0.85em;
+    color: #666;
+}
+
+.backup-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.backup-action-btn {
+    padding: 4px 8px;
+    font-size: 0.8em;
+    border: 1px solid #d1d5da;
+    background-color: white;
+    color: #24292e;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+}
+
+.backup-action-btn:hover {
+    background-color: #f6f8fa;
+}
+
+.backup-action-btn.danger {
+    color: #cf222e;
+    border-color: #f7baba;
+}
+
+.backup-action-btn.danger:hover {
+    background-color: #ffeef0;
+}
+
+/* --- Actions Area (Save Button & Status) --- */
+.actions {
+    margin-top: 30px;
+    display: flex;
+    flex-direction: column; /* Stack button and status */
+    align-items: flex-start; /* Align button left */
+    gap: 15px;
+}
+
+button#saveSettingsBtn {
+    padding: 10px 20px;
+    cursor: pointer;
+    border: none;
+    background-color: #0366d6; /* Primary blue */
+    color: white;
+    border-radius: 6px;
+    font-size: 1.05em;
+    font-weight: 500;
+    transition: background-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+button#saveSettingsBtn:hover {
+    background-color: #005cc5; /* Darker blue on hover */
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+button#saveSettingsBtn:active {
+     background-color: #004b9b;
+}
+
+/* --- Status Message --- */
+.status {
+    width: 100%; /* Take full width */
+    font-size: 0.95em;
+    padding: 10px 15px;
+    text-align: center;
+    border-radius: 5px;
+    border: 1px solid transparent;
+    display: none; /* Hidden by default */
+    box-sizing: border-box;
+    word-wrap: break-word;
+}
+
+.status.success {
+    background-color: #e6ffed;
+    color: #1f883d;
+    border-color: #95d7a0;
+    display: block;
+}
+
+.status.error {
+    background-color: #ffeef0;
+    color: #cf222e;
+    border-color: #f7baba;
+    display: block;
+}
+
+.status.info {
+    background-color: #eef5ff;
+    color: #0969da;
+    border-color: #bcdfff;
+    display: block;
+}
+/* css/options.css */
+.desc {
+    font-size: 0.85em;
+    color: #606770;
+    margin: 6px 0 8px 26px; /* indent under the checkbox label */
+    line-height: 1.4;
+}
+body.dark-mode .desc { color: #8b949e; }
+
+/* --- Dark Mode --- */
+/* Apply dark mode styles if 'dark-mode' class is on body */
+body.dark-mode {
+    background-color: #1c2128; /* Dark page background */
+    color: #c9d1d9; /* Light primary text */
+}
+
+body.dark-mode .container {
+    background-color: #22272e; /* Dark card background */
+    border-color: #30363d; /* Darker border */
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3); /* Stronger shadow */
+}
+
+body.dark-mode h1 { color: #58a6ff; } /* Brighter blue */
+body.dark-mode h2 {
+    color: #adbac7; /* Lighter heading */
+    border-bottom-color: #30363d;
+}
+
+body.dark-mode label { color: #adbac7; } /* Lighter labels */
+
+body.dark-mode input[type="password"],
+body.dark-mode input[type="text"],
+body.dark-mode select {
+    background-color: #1c2128; /* Dark input background */
+    border-color: #484f58; /* Darker border */
+    color: #c9d1d9; /* Light text in inputs */
+}
+
+body.dark-mode input[type="password"]:focus,
+body.dark-mode input[type="text"]:focus,
+body.dark-mode select:focus {
+    border-color: #58a6ff; /* Blue focus border */
+    background-color: #22272e; /* Slightly lighter focus background */
+    box-shadow: 0 0 0 2px rgba(88, 166, 255, 0.3); /* Blue focus ring */
+}
+
+body.dark-mode .help-text { color: #8b949e; } /* Lighter help text */
+body.dark-mode .help-text a { color: #58a6ff; }
+body.dark-mode .help-text strong { color: #ffa198; } /* Lighter red warning */
+
+body.dark-mode .google-drive-status {
+    background-color: #1c2128;
+    border-color: #30363d;
+}
+
+body.dark-mode .connection-status.connected { background-color: #1f3d2a; color: #56d364; border-color: #2a5a38; }
+body.dark-mode .connection-status.disconnected { background-color: #442c2e; color: #ffa198; border-color: #72343a; }
+body.dark-mode .connection-status.connecting { background-color: #3d3017; color: #eac54f; border-color: #5a4a1a; }
+
+body.dark-mode .drive-btn, body.dark-mode .backup-btn {
+    background-color: #30363d;
+    color: #c9d1d9;
+    border-color: #484f58;
+}
+
+body.dark-mode .drive-btn:hover, body.dark-mode .backup-btn:hover {
+    background-color: #3e444c;
+    border-color: #586069;
+}
+
+body.dark-mode .drive-btn.primary, body.dark-mode .backup-btn.primary {
+    background-color: #238636;
+    border-color: #238636;
+}
+
+body.dark-mode .drive-btn.primary:hover, body.dark-mode .backup-btn.primary:hover {
+    background-color: #2ea043;
+    border-color: #2ea043;
+}
+
+body.dark-mode .modal-content {
+    background-color: #22272e;
+}
+
+body.dark-mode .modal-header {
+    border-bottom-color: #30363d;
+}
+
+body.dark-mode .modal-header h3 {
+    color: #adbac7;
+}
+
+body.dark-mode .modal-close {
+    color: #8b949e;
+}
+
+body.dark-mode .modal-close:hover {
+    background-color: #30363d;
+    color: #c9d1d9;
+}
+
+body.dark-mode .modal-footer {
+    border-top-color: #30363d;
+}
+
+body.dark-mode .modal-btn {
+    background-color: #30363d;
+    color: #c9d1d9;
+    border-color: #484f58;
+}
+
+body.dark-mode .modal-btn:hover {
+    background-color: #3e444c;
+    border-color: #586069;
+}
+
+body.dark-mode .modal-btn.primary {
+    background-color: #238636;
+    border-color: #238636;
+}
+
+body.dark-mode .modal-btn.primary:hover {
+    background-color: #2ea043;
+    border-color: #2ea043;
+}
+
+body.dark-mode .backup-item {
+    background-color: #1c2128;
+    border-color: #30363d;
+}
+
+body.dark-mode .backup-name {
+    color: #adbac7;
+}
+
+body.dark-mode .backup-date {
+    color: #8b949e;
+}
+
+body.dark-mode .backup-action-btn {
+    background-color: #22272e;
+    color: #c9d1d9;
+    border-color: #30363d;
+}
+
+body.dark-mode .backup-action-btn:hover {
+    background-color: #30363d;
+}
+
+body.dark-mode .backup-action-btn.danger {
+    color: #ffa198;
+    border-color: #72343a;
+}
+
+body.dark-mode .backup-action-btn.danger:hover {
+    background-color: #442c2e;
+}
+
+body.dark-mode button#saveSettingsBtn {
+    background-color: #238636; /* Green save button in dark mode */
+    color: #ffffff;
+}
+body.dark-mode button#saveSettingsBtn:hover { background-color: #2ea043; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2); }
+body.dark-mode button#saveSettingsBtn:active { background-color: #238636; }
+
+body.dark-mode .status.success { background-color: #1f3d2a; color: #56d364; border-color: #2a5a38; }
+body.dark-mode .status.error { background-color: #442c2e; color: #ffa198; border-color: #72343a; }
+body.dark-mode .status.info { background-color: #20304c; color: #79c0ff; border-color: #2d4a77; }

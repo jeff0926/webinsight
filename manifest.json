@@ -1,0 +1,72 @@
+{
+  "manifest_version": 3,
+  "name": "WebInsight",
+  "version": "2.1.0",
+  "description": "AI-powered web content capture and analysis tool",
+  
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage",
+    "tabs",
+    "contextMenus",
+    "sidePanel",
+    "alarms",
+    "debugger",
+    "downloads"
+  ],
+
+"host_permissions": [
+    "<all_urls>"
+  ],
+
+
+  "background": {
+    "service_worker": "js/background.js",
+    "type": "module"
+  },
+
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["js/content.js"],
+      "css": ["css/content.css"],
+      "run_at": "document_idle"
+    }
+  ],
+
+  "action": {
+    "default_title": "WebInsight"
+  },
+
+  "side_panel": {
+    "default_path": "html/panel.html"
+  },
+
+  "options_page": "html/options.html",
+
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "html/*",
+        "css/*",
+        "js/*"
+      ],
+      "matches": ["<all_urls>"]
+    }
+  ],
+
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self';"
+  },
+
+  "externally_connectable": {
+    "matches": ["*://*/*"]
+  },
+
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

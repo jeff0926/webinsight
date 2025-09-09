@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>WebInsight Metadata Test Page</title>
+
+  <!-- The one we care about for this test -->
+  <meta name="description" content="A small test page to verify WebInsight's page metadata capture." />
+  <meta name="keywords" content="ai, model evaluation, server, mcp project, embeddings, prompt engineering" />
+
+  <!-- Nice-to-have extras (not required, but useful later) -->
+  <link rel="canonical" href="https://example.com/labs/webinsight-metadata-test" />
+  <meta property="og:title" content="WebInsight Metadata Test Page" />
+  <meta property="og:description" content="Testing meta keywords, description, links, and language capture." />
+  <meta name="twitter:title" content="WebInsight Metadata Test Page" />
+  <meta name="twitter:description" content="Testing meta keywords, description, links, and language capture." />
+  <style>
+    body { font: 16px/1.6 system-ui, sans-serif; margin: 2rem; }
+    code, pre { background:#f6f8fa; padding: .25rem .5rem; border-radius: 6px; }
+    .links a { display:block; margin: .2rem 0; }
+  </style>
+</head>
+<body>
+  <h1>WebInsight Page Metadata Capture — Test</h1>
+  <p>
+    This page is designed to test that WebInsight captures
+    <code>&lt;html lang&gt;</code>, <code>meta[name="description"]</code>,
+    and <code>meta[name="keywords"]</code>.
+  </p>
+
+  <h2>Sample Content</h2>
+  <p>
+    We mention topics like AI, model evaluation, embeddings, and prompt engineering to provide context text.
+    This helps confirm that <code>document.body.innerText</code> is captured too.
+  </p>
+
+  <h2>Links (for link extraction)</h2>
+  <div class="links">
+    <a href="https://example.com/docs/getting-started">Example Docs — Getting Started</a>
+    <a href="https://modelcontextprotocol.io/docs/learn/architecture">MCP Architecture</a>
+    <a href="https://en.wikipedia.org/wiki/Prompt_engineering">Wikipedia: Prompt engineering</a>
+    <!-- these should be ignored by your filters -->
+    <a href="#top">Back to top (fragment)</a>
+    <a href="javascript:void(0)">JS link (ignore)</a>
+    <a href="mailto:test@example.com">Email link (ignore)</a>
+    <a href="tel:+1234567890">Phone link (ignore)</a>
+  </div>
+
+  <p><em>Now use WebInsight → Save Page. In the panel, expand the item and confirm the Page metadata shows
+  <strong>lang</strong>, <strong>description</strong>, and <strong>keywords</strong>.</em></p>
+</body>
+</html>

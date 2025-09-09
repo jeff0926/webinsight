@@ -1,0 +1,40 @@
+/* css/content.css */
+
+/* Styles for elements injected by the content script (e.g., area selection overlay) */
+
+/*
+   Note: It's generally better to avoid overly broad selectors here to minimize
+   conflicts with the target website's styles. Use specific IDs or classes
+   prefixed uniquely for the extension (e.g., .webinsight-overlay).
+
+   The styles for the overlay are currently applied inline via JavaScript in content.js
+   for simplicity in the POC. In a production extension, defining them here with
+   classes would be cleaner and more maintainable.
+*/
+
+/* Example styles if using classes (currently not used by content.js): */
+/*
+.webinsight-selection-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background-color: rgba(0, 50, 100, 0.1);
+    cursor: crosshair;
+    z-index: 2147483647;
+    user-select: none;
+}
+
+.webinsight-selection-box {
+    position: fixed;
+    border: 2px dashed #0366d6;
+    background-color: rgba(3, 102, 214, 0.2);
+    pointer-events: none;
+    z-index: 2147483647;
+    user-select: none;
+}
+*/
+
+/* Add styles for any other UI elements the content script might inject,
+   like a potential quick-save button near text selections. */

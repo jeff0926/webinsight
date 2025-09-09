@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebInsight</title>
+    <link rel="stylesheet" href="../css/popup.css">
+</head>
+<body>
+    <div class="container">
+        <h1>WebInsight</h1>
+
+        <div class="actions">
+            <button id="savePageBtn" title="Save visible text and basic info from this page">Save Page</button>
+            <button id="savePageAsPDFBtn" title="Save the entire webpage as a PDF document">Save as PDF</button>
+            <button id="saveSelectionBtn" title="Save the currently selected text on the page">Save Selection</button>
+            <button id="captureVisibleBtn" title="Capture a screenshot of the currently visible area">Capture Visible</button>
+            <button id="captureAreaBtn" title="Select a specific area on the page to capture">Capture Area</button>
+            <button id="optionsBtn" title="Open WebInsight settings page">Settings</button>
+        </div>
+
+        <div id="statusMessage" class="status" aria-live="polite"></div>
+
+        <h2>Recent Items</h2>
+        <div id="contentList" class="content-list">
+            <div class="content-item"><i>Loading items...</i></div>
+        </div>
+    </div>
+
+    <script src="../js/popup.js"></script>
+</body>
+</html>

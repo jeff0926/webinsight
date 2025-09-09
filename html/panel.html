@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebInsight Panel</title>
+    <link rel="stylesheet" href="../css/panel.css">
+</head>
+<body>
+    <div class="panel-container">
+        <header class="panel-header">
+            <h1>JCz WebInsight</h1>
+            <div class="panel-actions">
+                <button id="panelSavePageBtn" title="Save visible text and basic info from the current page">Save Page</button>
+                <button id="panelSavePageAsPDFBtn" title="Save the entire webpage as a PDF document">Save as PDF</button>
+                <button id="panelSaveSelectionBtn" title="Save the currently selected text on the page">Save Selection</button>
+                <button id="panelCaptureVisibleBtn" title="Capture a screenshot of the currently visible area">Capture Visible</button>
+                <button id="panelCaptureAreaBtn" title="Select a specific area on the page to capture">Capture Area</button>
+            </div>
+        </header>
+
+        <main class="panel-content">
+
+            <!-- AI Status Section -->
+            <section class="ai-section">
+                <h3>🤖 AI Tag Assistant</h3>
+                <div id="aiStatusIndicator" class="ai-status disabled">AI disabled - Click to enable tag suggestions</div>
+                <div class="ai-controls">
+                    <button id="initializeAIBtn" class="ai-btn" title="Initialize keyword-based AI for smart tag suggestions">Initialize AI</button>
+                    <button id="generateEmbeddingsBtn" class="ai-btn" style="display: none;" title="Generate keyword profiles for existing tags to enable suggestions">Generate Embeddings</button>
+                </div>
+            </section>
+            <section class="panel-filter-section">
+                <h3>Filter by Tag</h3>
+                <div id="tagFilterList" class="tag-filter-list">
+                    <i>Loading tags...</i>
+                </div>
+                <div class="filter-actions">
+                    <button id="clearTagFilterBtn" class="clear-filter-btn" style="display: none;">Show All Items</button>
+                    <button id="getKeyPointsBtn" class="key-points-btn" style="display: none;" title="Generate key points from items with the selected tag">Get Key Points</button>
+                    <button id="generateReportBtn" class="generate-report-btn" style="display: none;" title="Generate a comprehensive PDF report from items with the selected tag">Generate Report</button>
+                    <!-- New Project Export Button -->
+                    <button id="exportProjectBtn" class="export-project-btn" style="display: none;" title="Export all items with this tag into a single JSON file for AI analysis">Export Project for AI</button>
+                </div>
+            </section>
+            
+            <h2>Saved Items</h2>
+            <div id="keyPointsResultDisplay" class="key-points-result-area">
+            </div>
+            <div id="panelContentList" class="content-list-container">
+                <p><i>Loading saved items...</i></p>
+            </div>
+
+            <div id="panelStatusMessage" class="status-message" aria-live="polite">
+            </div>
+        </main>
+
+        <footer class="panel-footer">
+            <button id="panelOptionsBtn" title="Open WebInsight settings page">Settings</button>
+        </footer>
+    </div>
+
+    <script src="../js/panel.js"></script>
+</body>
+</html>

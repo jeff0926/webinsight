@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebInsight Settings</title>
+    <link rel="stylesheet" href="../css/options.css">
+</head>
+<body>
+    <div class="container">
+        <h1>WebInsight Settings</h1>
+
+        <section class="settings-section">
+            <h2>API Configuration</h2>
+            <div class="setting">
+                <label for="apiKey">Google Gemini API Key:</label>
+                <input type="password" id="apiKey" name="apiKey" placeholder="Enter > AIzaSyC-3WNdq1WFCyoLHDpU4Jy1uBT2XxCXKHE" aria-describedby="apiKeyHelp">
+                <p id="apiKeyHelp" class="help-text">
+                    Your API key enables image analysis features. It is stored locally in your browser's storage and is required for visual analysis.
+                    <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer">Get an API Key from Google AI Studio</a>.
+                </p>
+            </div>
+        </section>
+        <!-- AI Preferences -->
+        <section class="settings-section">
+        <h2>AI Preferences</h2>
+        <div class="setting">
+            <label for="aiModeSelect">AI Mode:</label>
+            <select id="aiModeSelect" name="aiModeSelect">
+            <option value="ask">Ask each time</option>
+            <option value="local-first">Local-first (on-device)</option>
+            <option value="cloud-first">Cloud-first (Gemini)</option>
+            </select>
+            <p class="help-text">
+            Choose how WebInsight handles AI features like tag suggestions and key points.<br>
+            <strong>Local-first</strong> will use the on-device model when available and may download a ~25 MB model on first use (with your consent).<br>
+            <strong>Cloud-first</strong> uses Gemini (requires API key).<br>
+            <strong>Ask each time</strong> lets you decide per action.
+            </p>
+        </div>
+        </section>
+
+        <!-- New Data Management Section -->
+        <section class="settings-section">
+            <h2>Data Management (Local)</h2>
+            <div class="setting">
+                <p class="help-text">
+                    Save a complete backup of your WebInsight data to a file on your computer. You can use this file to restore your data on a new computer or after reinstalling the extension.
+                </p>
+                <div class="backup-actions">
+                    <button id="exportBackupBtn" class="backup-btn">Export Full Backup</button>
+                    <button id="importBackupBtn" class="backup-btn">Import from Backup</button>
+                    <input type="file" id="importFileInput" style="display: none;" accept=".json">
+                </div>
+            </div>
+        </section>
+
+        <section class="settings-section">
+        <h2>Report Defaults</h2>
+
+        <label>
+            <input id="cloudAssist" type="checkbox">
+            Cloud Assist (LLM enhancement)
+            <div class="desc">Ask the cloud AI to improve clarity, fill in missing details, and organize content better.</div>
+        </label>
+
+        <label>
+            <input id="autoKeyPoints" type="checkbox">
+            Auto-generate Key Points if missing
+            <div class="desc">If no "Key Points" section exists, it will be created automatically before generating the PDF.</div>
+        </label>
+
+        <label>
+            <input id="captions" type="checkbox">
+            Include figure captions & layout hints
+            <div class="desc">Add descriptive captions for images and suggest where they should appear in the report.</div>
+        </label>
+
+        <label>
+            <input id="normalizeTags" type="checkbox">
+            Normalize tags/casing in report
+            <div class="desc">Make all tags consistent in case (e.g., “Cat” → “cat”) for a cleaner report.</div>
+        </label>
+
+        <label>
+            <input id="includeRisks" type="checkbox">
+            Add “Risks & Unknowns” section
+            <div class="desc">Include a section listing gaps, assumptions, and potential risks in the research.</div>
+        </label>
+
+        <label>
+            <input id="exportResearchMarkdown" type="checkbox">
+            Also export Research Markdown (system+user prompts)
+            <div class="desc">Create a Markdown file with the report and the exact prompts used to generate it.</div>
+        </label>
+
+        <label for="tokenSoftCap">
+            Token/Cost soft cap per export (0 = none)
+            <div class="desc">Limit how many tokens the cloud AI can use per report to control costs.</div>
+        </label>
+        <input id="tokenSoftCap" type="number" min="0" step="1" value="0">
+        </section>
+
+
+
+        <section class="settings-section">
+            <h2>Appearance</h2>
+            <div class="setting">
+                <label for="themeSelect">Theme:</label>
+                <select id="themeSelect" name="themeSelect">
+                    <option value="system">System Default</option>
+                    <option value="light">Light</option>
+                    <option value="dark">Dark</option>
+                </select>
+                 <p class="help-text">Choose the visual theme for the extension popup and options page.</p>
+            </div>
+        </section>
+
+        <div class="actions">
+             <button id="saveSettingsBtn">Save Settings</button>
+             <div id="statusMessage" class="status" aria-live="polite"></div>
+        </div>
+
+    </div>
+    <script src="../js/options.js"></script>
+</body>
+</html>

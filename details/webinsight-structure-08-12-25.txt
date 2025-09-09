@@ -1,0 +1,20 @@
+webinsight$ ls -R
+.:
+ css   html   icons   js   manifest.json   nextsteps-8-12-25.txt   README.md  'webinsight_project_overview (1).md'
+
+./css:
+content.css  data_viewer.css  options.css  panel.css  panel-v2-001css  popup.css  popup-v2-001.css
+
+./html:
+ ai-worker.html             data_viewer.html   optionsWdrive.html   panel-v2-001.html   popup-v2-001.html
+'data_viewer - Copy.html'   options.html       panel.html           popup.html
+
+./icons:
+icon128.png  icon16.png  icon48.png
+
+./js:
+ ai-worker.js    background_orig.js     content.js               data_viewer.js   options.js         panel.js          popup.js
+ background.js   background-v2-001.js  'data_viewer - Copy.js'   lib              optionsWDrive.js   panel-v2-001.js   popup-v2-001.js
+
+./js/lib:
+api.js  db.js  google-drive.js  local-ai.js  pdf-generator.js

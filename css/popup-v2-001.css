@@ -1,0 +1,270 @@
+/* css/popup.css */
+
+/* --- Base Styles --- */
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+    min-width: 320px; /* Minimum width for the popup */
+    max-width: 400px; /* Maximum width */
+    padding: 12px;
+    font-size: 14px;
+    line-height: 1.5;
+    background-color: #f9f9f9; /* Light background */
+    color: #333; /* Dark text */
+    transition: background-color 0.2s ease, color 0.2s ease; /* Smooth theme transitions */
+}
+
+.container {
+    display: flex;
+    flex-direction: column;
+    gap: 12px; /* Spacing between elements */
+}
+
+/* --- Header --- */
+h1 {
+    font-size: 1.4em; /* Slightly larger title */
+    font-weight: 600;
+    text-align: center;
+    margin: 0 0 5px 0;
+    color: #0366d6; /* Primary blue color */
+}
+
+h2 {
+    font-size: 1.1em;
+    font-weight: 500;
+    margin: 10px 0 5px 0;
+    border-bottom: 1px solid #e1e4e8; /* Separator line */
+    padding-bottom: 4px;
+    color: #586069; /* Subdued header color */
+}
+
+
+/* --- Action Buttons --- */
+.actions {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); /* Responsive grid */
+    gap: 8px;
+}
+
+button {
+    padding: 8px 10px;
+    cursor: pointer;
+    border: 1px solid #d1d5da; /* Light border */
+    background-color: #f6f8fa; /* Light button background */
+    color: #24292e; /* Button text color */
+    border-radius: 6px; /* Slightly more rounded corners */
+    font-size: 0.95em;
+    font-weight: 500;
+    text-align: center;
+    transition: background-color 0.2s ease, border-color 0.2s ease;
+    white-space: nowrap; /* Prevent wrapping */
+    overflow: hidden;
+    text-overflow: ellipsis; /* Add ellipsis if text overflows */
+}
+
+button:hover {
+    background-color: #f3f4f6; /* Slightly darker on hover */
+    border-color: #c9d1d9;
+}
+
+button:active {
+    background-color: #e1e4e8; /* Darker when clicked */
+    border-color: #b0b8c1;
+}
+
+/* Specific button styling if needed */
+#optionsBtn {
+    /* Example: Slightly different style for settings */
+    /* background-color: #e7f0ff; */
+}
+
+
+/* --- Status Message --- */
+.status {
+    font-size: 0.9em;
+    padding: 8px 12px;
+    text-align: center;
+    border-radius: 5px;
+    border: 1px solid transparent; /* Reserve space for border */
+    min-height: 1.5em; /* Prevent layout shift */
+    display: none; /* Hidden by default */
+    margin-top: 5px;
+    word-wrap: break-word; /* Wrap long messages */
+}
+
+.status.success {
+    background-color: #e6ffed; /* Light green background */
+    color: #1f883d; /* Dark green text */
+    border-color: #95d7a0; /* Green border */
+    display: block;
+}
+
+.status.error {
+    background-color: #ffeef0; /* Light red background */
+    color: #cf222e; /* Dark red text */
+    border-color: #f7baba; /* Red border */
+    display: block;
+}
+
+.status.info { /* For loading messages etc. */
+    background-color: #eef5ff; /* Light blue background */
+    color: #0969da; /* Blue text */
+    border-color: #bcdfff; /* Blue border */
+    display: block;
+}
+
+
+/* --- Content List --- */
+.content-list {
+    margin-top: 5px;
+    max-height: 250px; /* Limit height to prevent overly long popup */
+    overflow-y: auto; /* Enable vertical scrolling */
+    border: 1px solid #e1e4e8; /* Border around the list */
+    border-radius: 6px;
+    background-color: #fff; /* White background for items */
+}
+
+.content-item {
+    padding: 10px 12px;
+    border-bottom: 1px solid #e1e4e8; /* Separator between items */
+    font-size: 0.95em;
+    position: relative; /* For positioning timestamp and delete button */
+    cursor: pointer; /* Indicate clickable */
+    transition: background-color 0.15s ease;
+    padding-bottom: 28px; /* Ensure space for timestamp */
+}
+
+.content-item:last-child {
+    border-bottom: none; /* No border for the last item */
+}
+
+.content-item:hover {
+    background-color: #f6f8fa; /* Subtle hover effect */
+}
+
+/* Item Title */
+.content-item strong {
+    display: block; /* Title on its own line */
+    font-weight: 500;
+    margin-bottom: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis; /* Ellipsis for long titles */
+    color: #0366d6; /* Link-like color for title */
+}
+
+/* Item Preview Text/Image */
+.content-item .preview {
+    font-size: 0.9em;
+    color: #586069; /* Subdued color for preview */
+    margin: 0 0 5px 0;
+    max-height: 3.2em; /* Limit preview height (approx 2 lines) */
+    overflow: hidden;
+    word-break: break-word; /* Prevent long words overflowing */
+    line-height: 1.4;
+}
+.content-item .preview img {
+    max-width: 60px;
+    max-height: 40px;
+    vertical-align: middle;
+    margin-right: 6px;
+    border-radius: 3px;
+    border: 1px solid #e1e4e8;
+    object-fit: cover; /* Scale image nicely */
+}
+
+/* Timestamp */
+.content-item span.timestamp {
+    position: absolute;
+    bottom: 8px; /* Position at the bottom */
+    left: 12px;
+    font-size: 0.8em; /* Smaller font for timestamp */
+    color: #6a737d; /* Gray color */
+}
+
+/* Analysis Status */
+.content-item .analysis-status {
+    font-weight: normal;
+    font-size: 0.8em;
+    margin-left: 6px;
+    display: inline-block; /* Keep on same line as title */
+    vertical-align: middle;
+}
+.analysis-status.success { color: #1f883d; } /* Green */
+.analysis-status.error { color: #cf222e; } /* Red */
+.analysis-status.pending { color: #d29922; } /* Orange/Yellow */
+
+/* Delete Button */
+.content-item .delete-btn {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    background: none;
+    border: none;
+    color: #6a737d; /* Gray color */
+    cursor: pointer;
+    font-size: 1.2em; /* Make X slightly larger */
+    padding: 2px 5px;
+    line-height: 1;
+    border-radius: 4px;
+    transition: color 0.2s ease, background-color 0.2s ease;
+}
+.content-item .delete-btn:hover {
+    color: #cf222e; /* Red on hover */
+    background-color: #ffeef0; /* Light red background on hover */
+}
+
+
+/* --- Dark Mode --- */
+@media (prefers-color-scheme: dark) {
+    /* Apply dark mode styles if 'dark-mode' class is on body */
+    body.dark-mode {
+        background-color: #1c2128; /* Dark background */
+        color: #c9d1d9; /* Light text */
+    }
+
+    body.dark-mode h1 { color: #58a6ff; } /* Brighter blue */
+    body.dark-mode h2 {
+        color: #8b949e; /* Lighter gray */
+        border-bottom-color: #30363d; /* Darker border */
+    }
+
+    body.dark-mode button {
+        background-color: #30363d; /* Darker button background */
+        color: #c9d1d9; /* Light button text */
+        border-color: #484f58; /* Darker border */
+    }
+    body.dark-mode button:hover {
+        background-color: #3e444c;
+        border-color: #586069;
+    }
+     body.dark-mode button:active {
+        background-color: #484f58;
+        border-color: #6a737d;
+    }
+
+    body.dark-mode .status.success { background-color: #1f3d2a; color: #56d364; border-color: #2a5a38; }
+    body.dark-mode .status.error { background-color: #442c2e; color: #ffa198; border-color: #72343a; }
+    body.dark-mode .status.info { background-color: #20304c; color: #79c0ff; border-color: #2d4a77; }
+
+    body.dark-mode .content-list {
+        border-color: #30363d;
+        background-color: #22272e; /* Slightly darker list background */
+    }
+    body.dark-mode .content-item { border-bottom-color: #30363d; }
+    body.dark-mode .content-item:hover { background-color: #2d333b; }
+    body.dark-mode .content-item strong { color: #58a6ff; } /* Brighter title */
+    body.dark-mode .content-item .preview { color: #8b949e; } /* Lighter preview text */
+     body.dark-mode .content-item .preview img { border-color: #30363d; }
+    body.dark-mode .content-item span.timestamp { color: #6e7681; } /* Darker gray timestamp */
+
+    body.dark-mode .analysis-status.success { color: #56d364; }
+    body.dark-mode .analysis-status.error { color: #ffa198; }
+    body.dark-mode .analysis-status.pending { color: #eac54f; }
+
+    body.dark-mode .content-item .delete-btn { color: #8b949e; }
+    body.dark-mode .content-item .delete-btn:hover { color: #ffa198; background-color: #442c2e; }
+}
+
+/* Apply dark mode based on class only (JS will add/remove class) */
+body.dark-mode { /* Styles defined within @media block above */ }
+
