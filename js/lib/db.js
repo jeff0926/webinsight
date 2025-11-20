@@ -42,6 +42,15 @@ function initDB() {
             db.onerror = (event) => {
                  console.error("Unhandled Database connection error:", event.target.error);
             };
+            // Run a one-time migration to merge duplicate tags that differ only by case
+            // This is safe to run asynchronously and will not block DB open.
+            try {
+                mergeDuplicateTags()
+                    .then(() => console.log("Duplicate tag migration complete."))
+                    .catch((err) => console.error("Duplicate tag migration failed:", err));
+            } catch (e) {
+                console.error("Error scheduling duplicate tag migration:", e);
+            }
             resolve(db);
         };
 
@@ -563,6 +572,53 @@ async function getAllContentTags() {
 
 // --- Initialization ---
 initDB().catch(console.error);
+
+/**
+ * Migration helper: find tags that differ only by case and merge them.
+ * Strategy:
+ * - Group tags by their lowercased name
+ * - For groups with >1 tag, choose a canonical tag (prefer an already-lowercased name, else lowest id)
+ * - Re-link all content from duplicate tags to the canonical tag, then delete the duplicate tag record
+ */
+async function mergeDuplicateTags() {
+    try {
+        const tags = await getAllTags();
+        if (!tags || tags.length === 0) return;
+        const groups = new Map();
+        for (const t of tags) {
+            const key = (t.name || "").toString().trim().toLowerCase();
+            if (!groups.has(key)) groups.set(key, []);
+            groups.get(key).push(t);
+        }
+
+        for (const [key, group] of groups.entries()) {
+            if (group.length <= 1) continue;
+            // Prefer a tag whose stored name is already lowercase, else pick lowest id
+            let canonical = group.find(g => g.name === (g.name || '').toLowerCase());
+            if (!canonical) {
+                canonical = group.reduce((a, b) => (a.id < b.id ? a : b));
+            }
+            const duplicates = group.filter(g => g.id !== canonical.id);
+            console.log(`Merging ${duplicates.length} duplicate tag(s) into canonical tag '${canonical.name}' (ID ${canonical.id})`);
+
+            for (const dup of duplicates) {
+                try {
+                    const contentIds = await getContentIdsByTagId(dup.id);
+                    // Link each content to canonical tag
+                    await Promise.all((contentIds || []).map(cid => linkTagToContent(cid, canonical.id).catch(e => { console.warn(`Could not link content ${cid} to tag ${canonical.id}:`, e); })));
+                    // Now delete the duplicate tag record
+                    await deleteTag(dup.id).catch(e => { console.warn(`Could not delete duplicate tag ${dup.id}:`, e); });
+                    console.log(`Duplicate tag ${dup.id} removed.`);
+                } catch (e) {
+                    console.error(`Error merging duplicate tag ${dup.id}:`, e);
+                }
+            }
+        }
+    } catch (error) {
+        console.error("mergeDuplicateTags error:", error);
+        throw error;
+    }
+}
 
 // --- Exports ---
 export {
