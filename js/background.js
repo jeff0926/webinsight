@@ -38,6 +38,43 @@ import { localAI } from "./lib/local-ai.js"; // This is currently the keyword-ba
 const MAX_ITEMS_FOR_SUMMARY = 5;
 const GENERATED_ITEM_TYPE = "generated_analysis";
 
+// --- NEW: JSON Schema Template for Diagram Analysis (Structured Output Fix) ---
+const DIAGRAM_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    contains_diagram: { type: "BOOLEAN", description: "Set to true if the image contains a discernible chart, graph, or architectural diagram." },
+    title: { type: "STRING", description: "The concise title of the diagram/chart, or null if none." },
+    nodes: {
+      type: "ARRAY",
+      description: "A list of key entities or components in the diagram.",
+      items: {
+        type: "OBJECT",
+        properties: {
+          id: { type: "STRING", description: "A short, unique identifier for the entity (e.g., 'DB_01', 'Agent_A')." },
+          label: { type: "STRING", description: "The label visible on the diagram node." },
+          type: { type: "STRING", description: "The functional type (e.g., 'API', 'Data Source', 'Container', 'Agent')." },
+        },
+        required: ["id", "label"],
+      },
+    },
+    edges: {
+      type: "ARRAY",
+      description: "A list of relationships between the nodes.",
+      items: {
+        type: "OBJECT",
+        properties: {
+          source: { type: "STRING", description: "The ID of the starting node (source entity)." },
+          target: { type: "STRING", description: "The ID of the ending node (target entity)." },
+          label: { type: "STRING", description: "The type of connection or data flow (e.g., 'reads', 'sends data', 'implements')." },
+        },
+        required: ["source", "target"],
+      },
+    },
+  },
+  required: ["contains_diagram", "title", "nodes", "edges"],
+};
+// --------------------------------------------------------------------------------------------------
+
 // --- Service Worker Lifecycle & Setup ---
 chrome.runtime.onInstalled.addListener(async (details) => {
   console.log(
@@ -63,6 +100,14 @@ chrome.runtime.onInstalled.addListener(async (details) => {
             chrome.runtime.lastError
           );
         else console.log("Default auto-backup setting applied.");
+      });
+      // AN-7: Set default stripNavigation to false
+      chrome.storage.local.set({ stripNavigation: false }, () => {
+        if (chrome.runtime.lastError)
+          console.error(
+            "Error setting default stripNavigation:",
+            chrome.runtime.lastError
+          );
       });
     }
   } catch (error) {
@@ -208,6 +253,19 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
     updateAutoBackupSchedule(changes.autoBackup.newValue);
   }
 });
+
+// --- Utility Function to Push Status to Panel (AN-9) ---
+function sendPanelStatus(message, type = "info") {
+    chrome.runtime.sendMessage({
+        type: "REPORT_GENERATION_STATUS",
+        payload: { message, type }
+    }).catch(e => {
+        // This is expected if the panel is closed.
+        if (!e.message.includes("Receiving end does not exist")) {
+             console.warn("Failed to send status to panel:", e);
+        }
+    });
+}
 
 // --- Message Listener ---
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -605,6 +663,29 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           });
       }
       break;
+    
+    // --- NEW: Handle Notes Update (AN-5) ---
+    case "UPDATE_ITEM_NOTES":
+        const { id: notesId, notes: notesContent } = message.payload || {};
+        if (typeof notesId !== "number" || typeof notesContent !== "string") {
+            sendResponse({ success: false, error: "Invalid ID or notes content provided." });
+            isResponseAsync = false;
+        } else {
+            updateContentItem(notesId, { notes: notesContent }) // Uses existing updateContentItem
+                .then(() => {
+                    chrome.storage.local.set({ lastSaveTimestamp: Date.now() }, () => {
+                        if (chrome.runtime.lastError)
+                            console.error("Error setting timestamp after notes update:", chrome.runtime.lastError);
+                    });
+                    sendResponse({ success: true, id: notesId });
+                })
+                .catch((error) => {
+                    console.error(`Error updating notes for item ${notesId}:`, error);
+                    sendResponse({ success: false, error: `Failed update notes: ${error.message}` });
+                });
+        }
+        break;
+
     // --- Tag Fetching ---
     case "GET_TAGS_FOR_ITEM":
       const contentIdForTags = message.payload?.contentId;
@@ -629,51 +710,79 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           });
       }
       break;
-    // --- Tag Management ---
-    case "ADD_TAG_TO_ITEM":
-      const { contentId: addContentId, tagName: addTagName } =
-        message.payload || {};
-      if (
-        typeof addContentId !== "number" ||
-        !addTagName ||
-        typeof addTagName !== "string" ||
-        addTagName.trim().length === 0
-      ) {
-        sendResponse({
-          success: false,
-          error: "Invalid contentId or tagName.",
-        });
-        isResponseAsync = false;
-      } else {
-        const trimmedTagName = addTagName.trim();
-        addTag(trimmedTagName)
-          .then((tagId) => {
-            if (typeof tagId !== "number")
-              throw new Error("Invalid tag ID returned.");
-            return linkTagToContent(addContentId, tagId);
-          })
-          .then(() => {
-            chrome.storage.local.set({ lastSaveTimestamp: Date.now() }, () => {
-              if (chrome.runtime.lastError)
-                console.error(
-                  "Error setting timestamp after tag add:",
-                  chrome.runtime.lastError
-                );
-            });
-            sendResponse({ success: true });
-          })
-          .catch((error) => {
-            console.error(
-              `Error adding tag "${trimmedTagName}" to item ${addContentId}:`,
-              error
-            );
-            sendResponse({
-              success: false,
-              error: `Failed add tag: ${error.message}`,
-            });
-          });
-      }
-      break;
+// --- Tag Management (AN-10 FIX: Hardened for DB errors/Correct Response) ---
+            case "ADD_TAG_TO_ITEM":
+                const { contentId: addContentId, tagName: addTagName } = message.payload || {};
+
+                // 1. Validation Check
+                if (
+                    typeof addContentId !== "number" ||
+                    !addTagName ||
+                    typeof addTagName !== "string" ||
+                    addTagName.trim().length === 0
+                ) {
+                    console.warn("ADD_TAG_TO_ITEM validation failed:", { payload: message.payload, sender });
+                    sendResponse({
+                        success: false,
+                        error: "Invalid contentId or tagName provided (AN-10 validation).",
+                    });
+                    isResponseAsync = false;
+                } else {
+                      const trimmedTagName = addTagName.trim();
+                      // TEMP LOG: trace incoming add-tag request with sender info and a stack trace
+                      console.log("ADD_TAG_TO_ITEM payload:", { contentId: addContentId, tagName: trimmedTagName });
+                      console.log("ADD_TAG_TO_ITEM invoked by sender:", sender);
+                      console.trace("ADD_TAG_TO_ITEM trace");
+
+                      // Indicate we are starting the DB flow
+                      console.log("background: starting addTag -> linkTagToContent flow for:", trimmedTagName);
+
+                      addTag(trimmedTagName)
+                        .then((tagId) => {
+                          console.log("background: addTag resolved with tagId:", tagId);
+                          if (typeof tagId !== "number")
+                            throw new Error("Invalid tag ID returned from database.");
+                          // 2. Link the content to the tag (this handles duplicates gracefully in db.js)
+                          console.log("background: calling linkTagToContent for contentId/tagId:", { contentId: addContentId, tagId });
+                          return linkTagToContent(addContentId, tagId).then((linkResult) => {
+                            console.log("background: linkTagToContent resolved:", linkResult);
+                            return linkResult;
+                          });
+                        })
+                        .then(() => {
+                            // 3. On Success (Tag Added OR Tag Already Existed and Linked):
+                            chrome.storage.local.set({ lastSaveTimestamp: Date.now() }, () => {
+                                if (chrome.runtime.lastError)
+                                    console.error(
+                                        "Error setting timestamp after tag add:",
+                                        chrome.runtime.lastError
+                                    );
+                            });
+                          // SHORT-LIVED DEBUG: echo the response payload we're about to send
+                          const successPayload = { success: true, message: `Tag '${trimmedTagName}' added or already linked.` };
+                          console.log("background -> sendResponse (ADD_TAG_TO_ITEM):", successPayload);
+                          try { sendResponse(successPayload); } catch (e) { console.error("sendResponse threw:", e); }
+                        })
+                        .catch((error) => {
+                            // 4. CRITICAL DEBUG LOGGING: This shows the actual database error.
+                            console.error(
+                                `Tag Submission Failed for item ${addContentId}:`,
+                                error && error.message ? error.message : error,
+                                error && error.stack ? error.stack : error
+                            );
+                          // SHORT-LIVED DEBUG: echo the failure payload we're about to send
+                          const failurePayload = {
+                            success: false,
+                            error: `Tag submission failed: ${error && error.message ? error.message : 'Unknown error'}. Check console for full error.`,
+                          };
+                          console.log("background -> sendResponse (ADD_TAG_TO_ITEM) (failure):", failurePayload);
+                          try { sendResponse(failurePayload); } catch (e) { console.error("sendResponse threw (failure path):", e); }
+                        });
+                }
+                break;
+
+
+                
     case "REMOVE_TAG_FROM_ITEM":
       const { contentId: removeContentId, tagId: removeTagId } =
         message.payload || {};
@@ -1118,6 +1227,23 @@ async function getCurrentTab() {
 }
 
 /**
+ * Retrieves the user's saving preferences from local storage.
+ * @returns {Promise<object>} Object containing preferences like { stripNavigation: boolean }
+ */
+async function getSavingPreferences() {
+    try {
+        const result = await chrome.storage.local.get(['stripNavigation']);
+        return {
+            stripNavigation: !!result.stripNavigation, // AN-7: Ensure boolean
+        };
+    } catch (error) {
+        console.error("Error fetching saving preferences:", error);
+        return { stripNavigation: false };
+    }
+}
+
+
+/**
  * Gathers all data from IndexedDB and prepares it for export.
  * @returns {Promise<object>} A promise that resolves with the complete database content.
  */
@@ -1166,6 +1292,44 @@ async function handleImportFullBackup(data) {
     throw new Error("Failed to import data into the database.");
   }
 }
+
+
+/**
+ * Executes find-and-replace on content to anonymize common PII patterns (AN-8).
+ * @param {string} content The input text content.
+ * @returns {string} The anonymized text content.
+ */
+function anonymizeContent(content) {
+    if (!content || typeof content !== 'string') return content;
+    
+    console.log("[PII] Starting anonymization...");
+
+    // 1. Email Addresses (e.g., user@domain.com)
+    // Replaces with: [EMAIL_REDACTED]
+    content = content.replace(/[\w\.-]+@[\w\.-]+\.\w+/gi, '[EMAIL_REDACTED]');
+
+    // 2. Phone Numbers (Simple patterns: XXXXX XXXXX or (XXX) XXX-XXXX)
+    // Replaces with: [PHONE_REDACTED]
+    content = content.replace(/(\(?\d{3}\)?[\s\.-]?\d{3}[\s\.-]?\d{4})/g, '[PHONE_REDACTED]');
+
+    // 3. Usernames/Names (Looks for common name patterns: Two capitalized words)
+    // This is heuristic but covers many common cases.
+    // Replaces with: [NAME_REDACTED]
+    content = content.replace(/([A-Z][a-z]+[\s][A-Z][a-z]+)/g, '[NAME_REDACTED]');
+    
+    console.log("[PII] Anonymization complete.");
+    return content;
+}
+
+
+
+
+
+
+
+
+
+
 
 async function handleSavePageAsPDF(options = {}) {
   console.log("[PDF] Starting page-to-PDF save process");
@@ -1569,7 +1733,8 @@ async function saveContent(item) {
     sourceTagIds: logItem.sourceTagIds,
     sourceItemIds: logItem.sourceItemIds,
     fileSize: logItem.fileSize,
-    // --- NEW: Log tags if present ---
+    // --- NEW: Log notes/tags if present ---
+    notes: logItem.notes,
     tags: logItem.tags,
   });
 
@@ -1640,7 +1805,7 @@ async function analyzeScreenshotAndUpdate(itemId, imageDataUrl) {
     const prompts = {
       description: "Describe this image concisely.",
       diagram_chart:
-        'Analyze this image. If it contains a chart, graph, or diagram, extract the key data points, labels, and title into a structured JSON object. If not, respond with {"contains_diagram": false}.',
+        "Analyze this image. If it contains a chart, graph, or architectural diagram, extract the key elements into a structured JSON object according to the provided schema. If not, respond with the required schema and set 'contains_diagram' to false.",
       layout:
         'Analyze the layout of this webpage screenshot. Identify key structural elements (like header, footer, main content, sidebar, navigation, forms) and their approximate locations (e.g., top, bottom, left, right, center). Provide the analysis as a JSON object like {"header": "top", "main_content": "center", ...}. If it\'s not a webpage screenshot, respond with {"is_webpage_layout": false}.',
     };
@@ -1655,21 +1820,39 @@ async function analyzeScreenshotAndUpdate(itemId, imageDataUrl) {
       analysisOverallSuccess = false;
     }
     try {
-      console.log(`[${itemId}] Requesting diagram/chart analysis...`);
+      console.log(`[${itemId}] Requesting diagram/chart analysis (Structured Output)...`);
       const r = await analyzeImageWithGemini(
         imageDataUrl,
-        prompts.diagram_chart
+        prompts.diagram_chart,
+        // --- Structured Output Configuration for Diagram Fix ---
+        { 
+          forceJson: true, 
+          schema: DIAGRAM_SCHEMA, // Use the defined schema
+          temperature: 0.1 // Lower temperature for structure compliance
+        }
       );
-      const t = extractTextFromResult(r);
-      if (t) {
-        analysisResults.diagramData = tryParseJson(t, "diagram/chart");
-        console.log(`[${itemId}] Diagram/Chart analysis processed.`);
-        if (analysisResults.diagramData?.contains_diagram === false)
-          analysisResults.diagramData = null;
+      
+      const jsonText = extractTextFromResult(r);
+      
+      if (!jsonText) {
+          analysisResults.diagramData = { error: "AI analysis did not return structured JSON content." };
+          analysisOverallSuccess = false;
       } else {
-        analysisResults.diagramData = { error: "No text content received." };
-        analysisOverallSuccess = false;
+        // Since Gemini is forced to output JSON, we can parse directly (or use a robust handler if needed).
+        try {
+          analysisResults.diagramData = JSON.parse(jsonText);
+          console.log(`[${itemId}] Structured Diagram/Chart analysis parsed.`);
+        } catch (e) {
+          console.error(`[${itemId}] Failed to JSON parse structured output:`, e);
+          analysisResults.diagramData = { parse_error: e.message, raw_content: jsonText };
+          analysisOverallSuccess = false;
+        }
       }
+      
+      // If the model correctly returned the schema but set contains_diagram to false, we set data to null
+      if (analysisResults.diagramData?.contains_diagram === false)
+          analysisResults.diagramData = null;
+      
     } catch (e) {
       console.error(`[${itemId}] Diagram/Chart analysis failed:`, e);
       analysisResults.diagramError = e.message;
@@ -1677,6 +1860,7 @@ async function analyzeScreenshotAndUpdate(itemId, imageDataUrl) {
     }
     try {
       console.log(`[${itemId}] Requesting layout analysis...`);
+      // NOTE: Layout analysis still uses loose JSON parsing (`tryParseJson`)
       const r = await analyzeImageWithGemini(imageDataUrl, prompts.layout);
       const t = extractTextFromResult(r);
       if (t) {
@@ -1827,13 +2011,33 @@ async function handleExportProjectForAI(payload) {
   };
 }
 
-// Keep ONLY this version
-// 8.13.25
+/**
+ * Executes content stripping logic and then captures page content.
+ */
 async function handleSavePageContent() {
   const tab = await getCurrentTab();
+  
+  const prefs = await getSavingPreferences(); // Fetch preferences (AN-7)
+
+  // AN-7: Step 1: If enabled, strip navigation elements BEFORE fetching content
+  if (prefs.stripNavigation) {
+    console.log(`[SavePage] Stripping navigation enabled. Executing cleanup on tab ${tab.id}.`);
+    try {
+        await chrome.scripting.executeScript({
+            target: { tabId: tab.id },
+            func: stripNavigationElements,
+        });
+        console.log("[SavePage] Navigation stripping executed.");
+    } catch (e) {
+        console.error("[SavePage] Failed to execute stripping script:", e);
+        // Non-fatal: proceed with saving unstripped content
+    }
+  }
+
+
   let pd;
 
-  // 1) Try content-script API first (richer + faster)
+  // 2) Try content-script API first (richer + faster)
   try {
     const resp = await chrome.tabs.sendMessage(tab.id, {
       type: "GET_PAGE_DATA",
@@ -1844,7 +2048,7 @@ async function handleSavePageContent() {
       throw new Error(resp?.error || "GET_PAGE_DATA returned no payload");
     }
   } catch {
-    // 2) Fallback: inline executeScript (works even if CS not injected yet)
+    // 3) Fallback: inline executeScript (works even if CS not injected yet)
     const [{ result }] = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
       func: () => {
@@ -1899,7 +2103,7 @@ async function handleSavePageContent() {
     pd = result;
   }
 
-  // 3) Persist
+  // 4) Persist
   return await saveContent({
     type: "page",
     title: pd?.title || "Untitled Page",
@@ -2201,6 +2405,8 @@ async function handleGeneratePDFReport(tagId) {
 
   try {
     // Step 1: Get tag name and check for existing key points
+    sendPanelStatus(`[1/4] Preparing data for tag ID ${tagId}...`, 'info');
+    
     let tagName = `Tag ${tagId}`;
     let keyPointsContent = null;
     let sourceInfo = "";
@@ -2227,7 +2433,7 @@ async function handleGeneratePDFReport(tagId) {
         error: "Could not retrieve content items for this tag.",
       };
     }
-
+    
     // Step 3: Check for existing key points or generate them
     const existingKeyPoints = allItems.find(
       (item) =>
@@ -2246,6 +2452,7 @@ async function handleGeneratePDFReport(tagId) {
         existingKeyPoints.sourceInfo ||
         `Generated from items tagged "${tagName}" (ID ${tagId}).`;
     } else {
+      sendPanelStatus(`[2/4] Generating Key Points (AI call)...`, 'info');
       console.log(
         `[PDFReport] No existing key points found, generating new ones...`
       );
@@ -2262,8 +2469,9 @@ async function handleGeneratePDFReport(tagId) {
         sourceInfo = `Report generated from ${allItems.length} items tagged "${tagName}" (ID ${tagId}).`;
       }
     }
-
-    // Step 4: Build PDF content
+    
+    // Step 4: Build PDF content (HTML preparation)
+    sendPanelStatus(`[3/4] Compiling report HTML...`, 'info');
     const reportHTML = await buildReportHTML(
       tagName,
       tagId,
@@ -2271,11 +2479,13 @@ async function handleGeneratePDFReport(tagId) {
       keyPointsContent,
       sourceInfo
     );
-
-    // Step 5: Generate PDF from HTML
+    
+    // Step 5: Generate PDF from HTML (The long step)
+    sendPanelStatus(`[4/4] Rendering PDF document (may take 30+ seconds)...`, 'info');
     const filename = generateReportFilename(tagName);
     const pdfResult = await generatePDFFromHTML(reportHTML, filename);
-
+    
+    // Step 6: Finalize
     console.log(`[PDFReport] PDF report generated successfully: ${filename}`);
     return {
       success: true,
@@ -2287,6 +2497,8 @@ async function handleGeneratePDFReport(tagId) {
       `[PDFReport] Error generating PDF report for tag ${tagId}:`,
       error
     );
+    // On failure, send error status to panel
+    sendPanelStatus(`Error: ${error.message}`, 'error');
     return {
       success: false,
       error:
@@ -2449,7 +2661,15 @@ async function buildItemHTML(item, itemNumber, focusTagName, focusTagId) {
 
   let contentHTML = "";
   let analysisHTML = "";
+  let notesHTML = ""; // New: Notes section
 
+  // Build notes section
+  if (item.notes && item.notes.trim().length > 0) {
+      notesHTML = `<div style="margin-bottom: 15px; border-left: 3px solid #ff9800; padding: 10px; background-color: #fffbe6; border-radius: 4px;">
+          <p style="margin: 0; font-style: italic; color: #e67e22;"><strong>User Notes:</strong> ${escapeHTML(item.notes)}</p>
+      </div>`;
+  }
+  
   // Build content based on item type
   switch (item.type) {
     case "page":
@@ -2477,13 +2697,14 @@ async function buildItemHTML(item, itemNumber, focusTagName, focusTagId) {
           item.analysis.diagramData !== null &&
           item.analysis.diagramData.contains_diagram !== false
         ) {
-          if (item.analysis.diagramData.text_summary) {
-            analysisHTML += `<p><strong>Diagram/Chart Analysis:</strong> ${escapeHTML(
-              item.analysis.diagramData.text_summary
-            )}</p>`;
-          } else if (typeof item.analysis.diagramData === "object") {
-            analysisHTML += `<p><strong>Diagram/Chart:</strong> Structured data detected with key elements identified.</p>`;
+          // If the structured diagram data is present and valid
+          if (Array.isArray(item.analysis.diagramData.nodes)) {
+            analysisHTML += `<p><strong>Diagram/Chart Analysis:</strong> Structured data detected with ${item.analysis.diagramData.nodes.length} nodes and ${item.analysis.diagramData.edges.length} connections.</p>`;
+          } else {
+            // Fallback for older non-compliant data or error states
+            analysisHTML += `<p><strong>Diagram/Chart:</strong> Structured data detected (details available in JSON).</p>`;
           }
+          
         }
         if (
           item.analysis.layout &&
@@ -2552,6 +2773,7 @@ async function buildItemHTML(item, itemNumber, focusTagName, focusTagId) {
             </div>
         </div>
         <div class="content-section">
+            ${notesHTML}
             ${contentHTML}
             ${analysisHTML}
         </div>

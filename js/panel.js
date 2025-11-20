@@ -42,6 +42,157 @@ let aiMode = "local-first"; // default if not set yet
 // Make it globally accessible for debugging
 window.currentItemsCache = currentItemsCache;
 
+// TEMP: Global click logger (short-lived) — logs every click with target info
+(function installGlobalClickLogger(){
+  if (window.__wi_global_click_logger_installed) return;
+  // Global on/off flag (default ON for testing)
+  window.__wi_click_logger_enabled = true;
+
+  function _logClick(e){
+    try{
+      if (!window.__wi_click_logger_enabled) return;
+      const t = e.target || e.srcElement;
+      const cls = t && t.classList ? Array.from(t.classList).join(' ') : (t && t.className) || '';
+      const dataset = t && t.dataset ? Object.assign({}, t.dataset) : null;
+      console.log('[WI-CLICK]', new Date().toISOString(), 'tag:', t && t.tagName, 'id:', t && t.id, 'classes:', cls, 'dataset:', dataset);
+      // If user clicked anywhere inside an Add button, report nearest add-tag-input value too
+      try{
+        const nearestAddBtn = t && t.closest ? t.closest('.add-tag-btn') : (t && t.classList && t.classList.contains('add-tag-btn') ? t : null);
+        if (nearestAddBtn) {
+          console.log('[WI-CLICK] nearest .add-tag-btn detected. contentId:', nearestAddBtn.dataset ? nearestAddBtn.dataset.contentId : undefined, 'add-input-value:', document.querySelector('.add-tag-input')?.value);
+        }
+      }catch(_e){}
+    }catch(_err){/* swallow */}
+  }
+  window.addEventListener('click', _logClick, true);
+  window.__wi_global_click_logger_installed = true;
+  window.__wi_remove_global_click_logger = function(){ window.removeEventListener('click', _logClick, true); delete window.__wi_global_click_logger_installed; delete window.__wi_remove_global_click_logger; console.log('WI click logger removed'); };
+  window.__wi_set_click_logger = function(on){ window.__wi_click_logger_enabled = !!on; console.log('WI: click logger set to', !!on); };
+  // Optional: toggleable pause for Add button clicks. Disabled by default.
+  window.__wi_pause_on_add_click = false;
+  window.__wi_set_pause_on_add_click = function(on){ window.__wi_pause_on_add_click = !!on; console.log('WI: pause on add click set to', !!on); };
+  console.log('WI: Temporary global click logger installed and ENABLED. Use window.__wi_set_click_logger(false) to disable or window.__wi_remove_global_click_logger() to remove.');
+})();
+
+// --- Utility Functions (AN-6) ---
+/**
+ * Copies a given string of text to the user's clipboard.
+ */
+function copyTextToClipboard(text, buttonEl) {
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    // Move textarea out of visual bounds
+    Object.assign(textarea.style, {
+        position: 'absolute',
+        left: '-9999px',
+        top: '0'
+    });
+    document.body.appendChild(textarea);
+    textarea.select();
+    
+    let success = false;
+    try {
+        // Fallback: Use document.execCommand('copy') as it works reliably in sandboxed contexts/iframes
+        success = document.execCommand('copy');
+    } catch (err) {
+        console.error('Error attempting to copy text:', err);
+    }
+    
+    document.body.removeChild(textarea);
+
+    if (success) {
+        const originalText = buttonEl.textContent;
+        buttonEl.textContent = 'Copied!';
+        buttonEl.disabled = true;
+        
+        setTimeout(() => {
+            buttonEl.textContent = originalText;
+            buttonEl.disabled = false;
+        }, 2000);
+    } else {
+        showStatus('Failed to copy JSON. Please select the text manually.', 'error');
+    }
+}
+
+/**
+ * Sends the user's notes to the background script for persistence (AN-5).
+ */
+function handleSaveNotes(itemId, notesContent, buttonEl) {
+    if (!buttonEl) return;
+    
+    const originalText = buttonEl.textContent;
+    buttonEl.textContent = 'Saving...';
+    buttonEl.disabled = true;
+
+    chrome.runtime.sendMessage({
+        type: "UPDATE_ITEM_NOTES",
+        payload: { id: itemId, notes: notesContent }
+    }, (response) => {
+        buttonEl.disabled = false;
+        if (response && response.success) {
+            // Success! Update cache so detail view updates on next open
+            const cachedItem = currentItemsCache.find(i => i.id === itemId);
+            if (cachedItem) cachedItem.notes = notesContent; 
+
+            buttonEl.textContent = 'Saved!';
+            showStatus(`Notes for Item ${itemId} updated successfully.`, "success");
+            // Revert button text after a short delay
+            setTimeout(() => {
+                buttonEl.textContent = originalText;
+            }, 2000);
+        } else {
+            buttonEl.textContent = 'Error';
+            showStatus(`Error saving notes: ${response?.error || 'Unknown error'}`, "error");
+            console.error("Failed to save notes:", response?.error);
+            // Revert button text after a short delay
+            setTimeout(() => {
+                buttonEl.textContent = originalText;
+            }, 3000);
+        }
+    });
+}
+
+/**
+ * Triggers content anonymization in the background and refreshes the display (AN-8).
+ */
+function handleAnonymizeContent(itemId, buttonEl, detailElement) {
+    if (!confirm("WARNING: This permanently replaces identified PII (emails, names, dates) in the saved text. Continue?")) {
+        return;
+    }
+
+    const originalText = buttonEl.textContent;
+    buttonEl.textContent = 'Anonymizing...';
+    buttonEl.disabled = true;
+
+    chrome.runtime.sendMessage({
+        type: "ANONYMIZE_ITEM",
+        payload: { id: itemId }
+    }, (response) => {
+        buttonEl.disabled = false;
+        if (response && response.success) {
+            showStatus(`Item ${itemId} anonymized successfully.`, "success");
+            
+            // Find item in cache and update its content
+            const cachedItem = currentItemsCache.find(i => i.id === itemId);
+            if (cachedItem) {
+                // Update item content in cache with the new anonymized content
+                cachedItem.content = response.payload.newContent;
+                
+                // Force re-render the detail view to show anonymized content
+                displayItemDetails(cachedItem, detailElement); 
+            }
+            
+            setTimeout(() => { buttonEl.textContent = originalText; }, 2000);
+        } else {
+            buttonEl.textContent = 'Error';
+            showStatus(`Anonymization failed: ${response?.error || 'Unknown error'}`, "error");
+            console.error("Anonymization failed:", response?.error);
+            setTimeout(() => { buttonEl.textContent = originalText; }, 3000);
+        }
+    });
+}
+
+
 // --- Initialization ---
 
 document.addEventListener("DOMContentLoaded", async () => {
@@ -55,7 +206,22 @@ document.addEventListener("DOMContentLoaded", async () => {
   await loadAIModeFromStorage();
   applyAIModeToUI();
   checkAIStatus();
+
+  // AN-9: Add listener for status updates from background (non-response channel)
+  chrome.runtime.onMessage.addListener(handleBackgroundStatusUpdate);
 });
+
+
+/** AN-9: Handler for status updates from background.js (during long tasks like PDF report) */
+function handleBackgroundStatusUpdate(message, sender, sendResponse) {
+    // Only handle messages specifically for long-running task status updates
+    if (message.type === "REPORT_GENERATION_STATUS") {
+        // Use showStatus to display progress. Use autoClear=false since the background script
+        // will send the final success/error message separately (which will auto-clear).
+        showStatus(message.payload.message, message.payload.type, false);
+    }
+}
+
 
 // --- AI MODE: read from storage ---
 function loadAIModeFromStorage() {
@@ -86,7 +252,7 @@ function applyAIModeToUI() {
     label = "AI mode: Local only — initialize to enable features";
     aiStatusIndicator.className = "ai-status disabled";
     initializeAIBtn.disabled = false;
-    generateEmbeddingsBtn.style.display = "none"; // keep hidden until init
+    generateEmbeddingsBtn.style.display = "none"; // show after init
   } else {
     // 'local-first' (default)
     label = "AI mode: Local-first — initialize local model";
@@ -210,6 +376,35 @@ function addEventListeners() {
       }
       const itemId = parseInt(itemElement.dataset.itemId, 10);
 
+      // Delegated handling for dynamic Add Tag buttons (ensures handlers work after re-renders)
+      const delegatedAddBtn = event.target.closest('.add-tag-btn');
+      if (delegatedAddBtn) {
+        event.stopPropagation();
+        // Determine contentId (prefer button dataset, fallback to item's dataset)
+        const contentId = parseInt(delegatedAddBtn.dataset.contentId || itemElement.dataset.itemId, 10);
+        const detailsDiv = itemElement.querySelector('.item-details');
+        const addInput = detailsDiv ? detailsDiv.querySelector('.add-tag-input') : null;
+        const tagsListEl = detailsDiv ? detailsDiv.querySelector('.tags-list') : null;
+
+        if (!addInput || !tagsListEl) {
+          console.warn('Delegated add-tag: missing input or tags list for item', contentId);
+          return;
+        }
+
+        const tagName = (addInput.value || '').trim();
+        const itemData = currentItemsCache.find(i => i.id === contentId) || {};
+
+        if (tagName.length === 0 && aiInitialized) {
+          enhancedAddTag(contentId, null, itemData.content, addInput, tagsListEl);
+        } else if (tagName.length > 0) {
+          enhancedAddTag(contentId, tagName, itemData.content, addInput, tagsListEl);
+          addInput.value = '';
+        } else {
+          showStatus('Enter a tag name or initialize AI for suggestions.', 'info');
+        }
+        return; // handled
+      }
+
       // Handle delete button click
       if (event.target.classList.contains("delete-btn")) {
         event.stopPropagation();
@@ -263,6 +458,38 @@ function addEventListeners() {
     console.error(
       "Panel content list element (ID: panelContentList) not found for event delegation."
     );
+  }
+
+  // KEYDOWN delegation: allow Enter in dynamically-rendered `.add-tag-input` to submit
+  if (panelContentListEl) {
+    panelContentListEl.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter') return;
+      const inputEl = e.target.closest && e.target.closest('.add-tag-input') ? e.target.closest('.add-tag-input') : null;
+      if (!inputEl) return;
+      e.preventDefault();
+      // Find nearest add button and simulate delegated handling
+      const nearestDetails = inputEl.closest('.item-details');
+      const nearestItem = inputEl.closest('.content-item');
+      const addBtn = nearestDetails ? nearestDetails.querySelector('.add-tag-btn') : null;
+      const contentId = parseInt((addBtn && addBtn.dataset.contentId) || (nearestItem && nearestItem.dataset.itemId), 10);
+      const tagsListEl = nearestDetails ? nearestDetails.querySelector('.tags-list') : null;
+      const tagName = (inputEl.value || '').trim();
+      const itemData = currentItemsCache.find(i => i.id === contentId) || {};
+
+      if (!inputEl || !tagsListEl) {
+        console.warn('Enter key: missing input or tags list for item', contentId);
+        return;
+      }
+
+      if (tagName.length === 0 && aiInitialized) {
+        enhancedAddTag(contentId, null, itemData.content, inputEl, tagsListEl);
+      } else if (tagName.length > 0) {
+        enhancedAddTag(contentId, tagName, itemData.content, inputEl, tagsListEl);
+        inputEl.value = '';
+      } else {
+        showStatus('Enter a tag name or initialize AI for suggestions.', 'info');
+      }
+    });
   }
 }
 
@@ -382,7 +609,14 @@ async function handleGenerateReportClick() {
   }
 
   setReportButtonsDisabled(true);
-  showStatus("Preparing report…", "info", false);
+  // AN-9: Set initial UI status when clicking the button
+  showStatus(
+    `Starting PDF report generation for tag "${
+      currentFilterTagName || "selected"
+    }"...`,
+    "info",
+    false
+  );
 
   try {
     const tagId = currentFilterTagId;
@@ -394,25 +628,12 @@ async function handleGenerateReportClick() {
       const alreadyHasKeyPoints = hasKeyPoints(items);
 
       if (!alreadyHasKeyPoints) {
-        showStatus(
-          "No key points found. Generating key points…",
-          "info",
-          false
-        );
+        // NOTE: Status updates here are handled by handleBackgroundStatusUpdate
         const kpResp = await sendBgMessage("GET_KEY_POINTS_FOR_TAG", { tagId });
         if (!kpResp?.success) {
           console.warn("Key Points generation failed:", kpResp?.error);
           // Non-fatal: continue to report anyway
-          showStatus(
-            `Key Points generation failed (${
-              kpResp?.error || "unknown error"
-            }). Continuing with report…`,
-            "error",
-            false
-          );
         } else {
-          // Optionally display the fresh key points in the panel if your UI supports it
-          showStatus("Key points generated.", "success");
           // Refresh list so the generated analysis item appears
           loadSavedContent(tagId);
         }
@@ -428,9 +649,8 @@ async function handleGenerateReportClick() {
       normalizeTagsEnabled: !!prefs.normalizeTags,
     };
 
-    showStatus("Generating PDF report…", "info", false);
-
     // 3) Ask background to generate PDF (BG may safely ignore unknown options)
+    // NOTE: This call is now non-blocking and relies on the REPORT_GENERATION_STATUS messages.
     const reportResp = await sendBgMessage("GENERATE_PDF_REPORT_FOR_TAG", {
       tagId,
       options: reportOptions,
@@ -440,15 +660,17 @@ async function handleGenerateReportClick() {
       throw new Error(reportResp?.error || "Report generation failed.");
     }
 
-    // If BG returns info (blob URLs, size, etc.), you can surface it here
-    showStatus("Report generated successfully.", "success");
+    // FINAL SUCCESS MESSAGE (if background didn't fail earlier)
+    showStatus("Report generated successfully. Check your Downloads.", "success", 5000);
     // Refresh items so the PDF entry (if saved as an item) shows up
     loadSavedContent(tagId);
   } catch (err) {
     console.error("Report generation error:", err);
-    showStatus(`Error generating report: ${err.message}`, "error");
+    // The background is expected to send the error status via handleBackgroundStatusUpdate
+    showStatus(`Error generating report: ${err.message}`, "error", false);
   } finally {
     setReportButtonsDisabled(false);
+    if (generateReportBtn) generateReportBtn.textContent = "Generate Report"; // AN-9: Reset text
   }
 }
 
@@ -713,6 +935,7 @@ function displayItemDetails(item, detailElement) {
   const datePub = item.datePublished ?? null;
   const dateMod = item.dateModified ?? null;
   const ctype = item.contentType ?? null;
+  const notesContent = item.notes ?? ''; // AN-5: Notes content
 
   // Build a reusable metadata block
   const metaBits = [];
@@ -724,7 +947,7 @@ function displayItemDetails(item, detailElement) {
   if (keywords)
     metaBits.push(`<div><strong>keywords:</strong> ${esc(keywords)}</div>`);
   // identifiers (pretty + compact)
-  if (host) metaBits.push(`<div><strong>host:</strong> ${esc(host)}</div>`);
+  if (host) metaBits.push(`<div><strong>host:</b> ${esc(host)}</div>`);
   if (canonicalUrl)
     metaBits.push(
       `<div><strong>canonical:</strong> <a href="${escAttr(
@@ -775,6 +998,23 @@ function displayItemDetails(item, detailElement) {
          ${metaBits.join("")}
        </div>`
     : "";
+    
+  // AN-5: Notes HTML Block (Includes AN-8 PII Button)
+  const notesHtml = `
+        <div class="detail-notes-section" style="margin-top: 15px; padding-top: 10px; border-top: 1px solid var(--panel-border-light);">
+            <h5 style="margin-top: 0; margin-bottom: 8px; font-size: 0.95em; font-weight: 600; color: var(--panel-secondary-text-light);">Personal Notes & Annotations</h5>
+            <textarea id="itemNotesInput_${item.id}" 
+                      placeholder="Add detailed notes or context here..." 
+                      style="width: 100%; min-height: 100px; padding: 8px; box-sizing: border-box; resize: vertical; font-size: 0.9em; border: 1px solid var(--panel-border-light); border-radius: 4px;">${esc(notesContent)}</textarea>
+            <button id="saveNotesBtn_${item.id}" class="add-tag-btn" style="float: right; margin-top: 8px; margin-bottom: 8px;">Save Notes</button>
+            
+            <!-- AN-8: Anonymization Button -->
+            <button id="anonymizeBtn_${item.id}" class="add-tag-btn" style="float: right; margin-top: 8px; margin-bottom: 8px; margin-right: 10px; background-color: #c0392b; color: white;">Anonymize PII</button>
+            
+            <div style="clear: both;"></div>
+        </div>
+    `;
+
 
   // --- type-specific content/metadata ---
   switch (item.type) {
@@ -820,10 +1060,14 @@ function displayItemDetails(item, detailElement) {
 
       // Full JSON (collapsible) when analysis exists
       if (item.analysis) {
+        // AN-6: Add Copy Button and unique ID for JSON content
         analysisHtml += `
           <details style="margin-top:6px;">
-            <summary>Show full analysis JSON</summary>
-            <pre><code>${esc(
+            <summary style="display: flex; justify-content: space-between; align-items: center;">
+                <span>Show full analysis JSON</span>
+                <button id="copyJsonBtn_${item.id}" class="add-tag-btn" style="padding: 3px 8px; font-size: 0.8em; margin-left: 10px; flex-shrink: 0;">Copy JSON</button>
+            </summary>
+            <pre id="analysisJsonContent_${item.id}"><code>${esc(
               JSON.stringify(item.analysis, null, 2)
             )}</code></pre>
           </details>`;
@@ -856,6 +1100,7 @@ function displayItemDetails(item, detailElement) {
 
   // --- render ---
   detailElement.innerHTML = `
+    ${notesHtml}  <!-- AN-5/AN-8: Inject notes/anonymization section -->
     <div class="detail-content">${contentHtml}</div>
     <div class="detail-metadata">${metadataHtml}</div>
     <div class="detail-analysis">${analysisHtml}</div>
@@ -874,6 +1119,42 @@ function displayItemDetails(item, detailElement) {
     <button class="close-details-btn">Close</button>
   `;
 
+  // --- AN-5: Save Notes Event Listener ---
+    const saveNotesBtn = detailElement.querySelector(`#saveNotesBtn_${item.id}`);
+    const notesInput = detailElement.querySelector(`#itemNotesInput_${item.id}`);
+    if (saveNotesBtn && notesInput) {
+        saveNotesBtn.addEventListener('click', () => {
+            handleSaveNotes(item.id, notesInput.value, saveNotesBtn);
+        });
+    }
+    
+    // --- AN-8: Anonymization Event Listener ---
+    const anonymizeBtn = detailElement.querySelector(`#anonymizeBtn_${item.id}`);
+    if (anonymizeBtn) {
+        // Only allow anonymization on content that *can* be anonymized
+        if (item.type === 'page' || item.type === 'selection') {
+            anonymizeBtn.addEventListener('click', () => {
+                handleAnonymizeContent(item.id, anonymizeBtn, detailElement);
+            });
+        } else {
+            anonymizeBtn.disabled = true;
+            anonymizeBtn.textContent = 'Anonymize N/A';
+        }
+    }
+
+
+  // --- AN-6: Copy JSON Event Listener ---
+    const copyJsonBtn = detailElement.querySelector(`#copyJsonBtn_${item.id}`);
+    const jsonContentEl = detailElement.querySelector(`#analysisJsonContent_${item.id}`);
+
+    if (copyJsonBtn && jsonContentEl) {
+        copyJsonBtn.addEventListener('click', (e) => {
+            e.stopPropagation(); // Prevent the click from toggling the <details> element
+            // Use textContent to get the raw JSON string from the <pre>
+            copyTextToClipboard(jsonContentEl.textContent, copyJsonBtn);
+        });
+    }
+
   // tags + close wiring
   const tagsListElement = detailElement.querySelector(".tags-list");
   fetchAndDisplayTags(item.id, tagsListElement);
@@ -885,20 +1166,52 @@ function displayItemDetails(item, detailElement) {
 
   const addTagInput = detailElement.querySelector(".add-tag-input");
   const addTagButton = detailElement.querySelector(".add-tag-btn");
+  
+  // FIX (AN-10): Redefine handleAddTag to ensure input value is read reliably on every click.
   const handleAddTag = () => {
-    const tagName = addTagInput.value.trim();
-    enhancedAddTag(
-      item.id,
-      tagName,
-      item.content,
-      addTagInput,
-      tagsListElement
-    );
-    addTagInput.value = "";
+    try {
+      // If enabled via console, pause execution here so DevTools can inspect state.
+      if (window.__wi_pause_on_add_click) {
+        console.log('WI: pause-on-add-click enabled — breaking into debugger');
+        debugger; // one-off pause; toggle with window.__wi_set_pause_on_add_click(true/false)
+      }
+      // FIX: Retrieve value *inside* the handler right before use.
+      const tagName = addTagInput.value.trim();
+      const itemContent = item.content; // Content for AI suggestion lookup
+
+      // SHORT-LIVED DEBUG: confirm handler invocation and values
+      console.log("panel: handleAddTag invoked for item", item.id, "inputValue:", tagName);
+
+      // Check if the user entered text or just clicked for suggestions
+      if (tagName.length === 0 && aiInitialized) {
+        enhancedAddTag(item.id, null, itemContent, addTagInput, tagsListElement);
+      } else if (tagName.length > 0) {
+        enhancedAddTag(
+          item.id,
+          tagName,
+          itemContent,
+          addTagInput,
+          tagsListElement
+        );
+        addTagInput.value = ""; // Clear input immediately after successful submission attempt
+      } else {
+        // User clicked button but no input and AI is not initialized
+        showStatus("Enter a tag name or initialize AI for suggestions.", "info");
+      }
+    } catch (err) {
+      // SHORT-LIVED DEBUG: surface any unexpected exception in the click handler
+      console.error("panel: handleAddTag exception:", err && err.stack ? err.stack : err);
+      showStatus("An error occurred when adding tag. See console.", "error");
+    }
   };
+  
+  // Event listeners added here
   addTagButton.addEventListener("click", handleAddTag);
   addTagInput.addEventListener("keypress", (e) => {
-    if (e.key === "Enter") handleAddTag();
+    if (e.key === "Enter") {
+        e.preventDefault(); // Prevent accidental form submission
+        handleAddTag();
+    }
   });
 }
 
@@ -984,6 +1297,8 @@ function fetchAndDisplayTags(contentId, tagsListElement) {
 /** Handles responses from tag add/remove actions. Refreshes tags for the specific item. */
 function handleTagActionResponse(response, contentId, tagsListElement) {
   if (response && response.success) {
+    // SHORT-LIVED DEBUG: log the successful response from background for tracing
+    console.log("panel <- ADD_TAG_TO_ITEM response:", response, "at", new Date().toISOString());
     showStatus("Tag action successful!", "success");
     if (tagsListElement && document.body.contains(tagsListElement)) {
       fetchAndDisplayTags(contentId, tagsListElement);
@@ -996,8 +1311,12 @@ function handleTagActionResponse(response, contentId, tagsListElement) {
     }
     loadFilterTags();
   } else {
+    // SHORT-LIVED DEBUG: log failure response as well
+    console.log("panel <- ADD_TAG_TO_ITEM response (failure):", response, "at", new Date().toISOString());
+    // AN-10 DEBUG: Use the detailed error message returned from background.js
+    const detailedError = response?.error || "Unknown error.";
     showStatus(
-      `Tag action failed: ${response?.error || "Unknown error"}`,
+      `Tag action failed: ${detailedError}`,
       "error"
     );
   }
@@ -1008,6 +1327,8 @@ function deleteItem(id, title = "") {
   const confirmMessage = `Are you sure you want to delete "${
     title || `Item ${id}`
   }"?`;
+  // IMPORTANT: Use standard window.confirm, as it is non-blocking here.
+  // We cannot easily replace this with a custom modal without significant restructuring.
   if (!confirm(confirmMessage)) {
     return;
   }
@@ -1180,13 +1501,14 @@ function handleGetKeyPointsClick() {
 }
 
 /** Handles click on the "Generate Report" button */
-function handleGenerateReportClick() {
+async function handleGenerateReportClick() {
   if (currentFilterTagId === null || !generateReportBtn) return;
 
+  // AN-9: Set initial UI status when clicking the button
   showStatus(
-    `Generating PDF report for tag "${
+    `Starting PDF report generation for tag "${
       currentFilterTagName || "selected"
-    }"... This may take a moment.`,
+    }"...`,
     "info",
     false
   );
@@ -1194,6 +1516,7 @@ function handleGenerateReportClick() {
   generateReportBtn.disabled = true;
   generateReportBtn.textContent = "Generating...";
 
+  // NOTE: This now relies on handleBackgroundStatusUpdate for step-by-step feedback
   chrome.runtime.sendMessage(
     {
       type: "GENERATE_PDF_REPORT_FOR_TAG",
@@ -1208,6 +1531,7 @@ function handleGenerateReportResponse(response) {
   if (generateReportBtn) {
     generateReportBtn.disabled = false;
     updateGenerateReportButtonVisibility();
+    generateReportBtn.textContent = "Generate Report"; // Reset text
   }
 
   if (response && response.success) {
@@ -1216,7 +1540,8 @@ function handleGenerateReportResponse(response) {
   } else {
     const errorMsg = response?.error || "Failed to generate PDF report.";
     console.error("PDF report generation failed:", errorMsg);
-    showStatus(`Error: ${errorMsg}`, "error", false);
+    // If the background failed, show the final error, but rely on background for progress status
+    showStatus(`Error: ${errorMsg}`, "error", false); 
   }
 }
 
@@ -1227,6 +1552,7 @@ function handleKeyPointsResponse(response) {
   if (getKeyPointsBtn) {
     getKeyPointsBtn.disabled = false;
     updateKeyPointsButtonVisibility();
+    getKeyPointsBtn.textContent = `Get Key Points for "${currentFilterTagName || "Selected"}"`; // Reset text
   }
 
   if (response && response.success) {
@@ -1343,7 +1669,7 @@ function handleExportProjectClick() {
         const sanitizedTagName = (currentFilterTagName || "project")
           .replace(/\s+/g, "-")
           .replace(/[^a-zA-Z0-9-]/g, "");
-        const ts = new Date().toISOString().slice(0, 19).replace(/[T:]/g, "-");
+        const ts = new Date().toISOString().slice(0, 1, 19).replace(/[T:]/g, "-");
         a.download = `${sanitizedTagName}_${ts}.json`;
         a.href = url;
         document.body.appendChild(a);
@@ -1414,7 +1740,7 @@ async function handleInitializeAI() {
     if (response && response.success) {
       aiInitialized = true;
       aiStatusIndicator.className = "ai-status ready";
-      aiStatusIndicator.textContent = "Local AI ready";
+      aiStatusIndicator.textContent = "Local AI ready - Tag suggestions available";
       showStatus("Local AI initialized.", "success");
 
       // show embeddings button if available
@@ -1454,7 +1780,7 @@ async function handleGenerateEmbeddings() {
 
       if (response && response.success) {
         aiStatusIndicator.className = "ai-status ready";
-        aiStatusIndicator.textContent = "Embeddings ready";
+        aiStatusIndicator.textContent = "Embeddings ready - Tag suggestions available";
         showStatus("Embeddings generated for tags.", "success");
       } else {
         aiStatusIndicator.className = "ai-status error";
@@ -1557,13 +1883,22 @@ async function enhancedAddTag(
     const normalizedTag = userInput.trim();
     showStatus(`Adding tag "${normalizedTag}"...`, "info", false);
 
+    // TEMP LOG: trace outgoing add-tag message from panel
+    console.log("panel -> ADD_TAG_TO_ITEM", { contentId: contentId, tagName: normalizedTag });
     chrome.runtime.sendMessage(
       {
         type: "ADD_TAG_TO_ITEM",
         payload: { contentId: contentId, tagName: normalizedTag },
       },
       (response) => {
-        handleTagActionResponse(response, contentId, tagsListEl);
+          // SHORT-LIVED DEBUG: raw response echo from background
+          console.log("panel <- raw response for ADD_TAG_TO_ITEM:", response);
+          if (chrome.runtime.lastError) {
+            console.error("panel: runtime.lastError after sendMessage (ADD_TAG_TO_ITEM):", chrome.runtime.lastError);
+            handleTagActionResponse({ success: false, error: chrome.runtime.lastError.message }, contentId, tagsListEl);
+            return;
+          }
+          try { handleTagActionResponse(response, contentId, tagsListEl); } catch (e) { console.error("panel: handleTagActionResponse threw:", e); }
       }
     );
     return;
@@ -1627,13 +1962,23 @@ async function showTagSuggestions(
             const targetContentId = parseInt(btn.dataset.contentId);
 
             showStatus(`Adding suggested tag "${tagName}"...`, "info", false);
+            // TEMP LOG: trace outgoing add-tag message from suggestion click
+            console.log("panel -> ADD_TAG_TO_ITEM (suggestion)", { contentId: targetContentId, tagName: tagName });
             chrome.runtime.sendMessage(
               {
                 type: "ADD_TAG_TO_ITEM",
                 payload: { contentId: targetContentId, tagName: tagName },
               },
               (response) => {
-                handleTagActionResponse(response, targetContentId, tagsListEl);
+                // SHORT-LIVED DEBUG: raw response echo from background (suggestion path)
+                console.log("panel <- raw response for ADD_TAG_TO_ITEM (suggestion):", response);
+                if (chrome.runtime.lastError) {
+                  console.error("panel: runtime.lastError after sendMessage (ADD_TAG_TO_ITEM suggestion):", chrome.runtime.lastError);
+                  handleTagActionResponse({ success: false, error: chrome.runtime.lastError.message }, targetContentId, tagsListEl);
+                  suggestionsContainer.remove();
+                  return;
+                }
+                try { handleTagActionResponse(response, targetContentId, tagsListEl); } catch (e) { console.error("panel: handleTagActionResponse threw (suggestion):", e); }
                 suggestionsContainer.remove();
               }
             );

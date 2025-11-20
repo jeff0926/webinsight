@@ -332,9 +332,13 @@ async function getContentItemsByIds(contentIds) {
 async function addTag(tagName) {
     if (!tagName || typeof tagName !== 'string' || tagName.trim().length === 0) return Promise.reject(new Error("Invalid tag name."));
     const trimmedTagName = tagName.trim();
+    // TEMP LOG: trace db.addTag invocation (with stack)
+    console.log("db.addTag called with:", trimmedTagName);
+    console.trace("db.addTag trace");
     const dbInstance = await initDB();
     return new Promise((resolve, reject) => {
         const transaction = dbInstance.transaction([TAG_STORE_NAME], 'readwrite');
+        transaction.oncomplete = () => { console.log(`addTag transaction complete for: "${trimmedTagName}"`); };
         const store = transaction.objectStore(TAG_STORE_NAME);
         const index = store.index('name');
         const getRequest = index.get(trimmedTagName);
@@ -343,8 +347,8 @@ async function addTag(tagName) {
             if (existingTag) { console.log(`Tag "${trimmedTagName}" exists (ID: ${existingTag.id})`); resolve(existingTag.id); }
             else { console.log(`Adding new tag: "${trimmedTagName}"`); const addRequest = store.add({ name: trimmedTagName }); addRequest.onsuccess = (addEvent) => { console.log(`Tag "${trimmedTagName}" added (ID: ${addEvent.target.result})`); resolve(addEvent.target.result); }; addRequest.onerror = (addEvent) => { console.error(`Error adding tag "${trimmedTagName}":`, addEvent.target.error); reject(`Error adding tag: ${addEvent.target.error}`); }; }
         };
-        getRequest.onerror = (event) => { console.error(`Error checking tag "${trimmedTagName}":`, event.target.error); reject(`Error checking tag: ${event.target.error}`); };
-        transaction.onerror = (event) => { console.error("Add tag transaction error:", event.target.error); };
+        getRequest.onerror = (event) => { console.error(`Error checking tag "${trimmedTagName}":`, event.target.error); if (event.target && event.target.error && event.target.error.stack) console.error(event.target.error.stack); reject(`Error checking tag: ${event.target.error}`); };
+        transaction.onerror = (event) => { console.error("Add tag transaction error:", event && event.target && event.target.error ? event.target.error : event); if (event && event.target && event.target.error && event.target.error.stack) console.error(event.target.error.stack); };
     });
 }
 
@@ -441,15 +445,19 @@ async function getTagsByIds(tagIds) {
  */
 async function linkTagToContent(contentId, tagId) {
     if (typeof contentId !== 'number' || typeof tagId !== 'number') return Promise.reject(new Error("Invalid contentId or tagId."));
+    // TEMP LOG: trace db.linkTagToContent invocation (with stack)
+    console.log("db.linkTagToContent called with:", { contentId, tagId });
+    console.trace("db.linkTagToContent trace");
     const dbInstance = await initDB();
     return new Promise((resolve, reject) => {
         const transaction = dbInstance.transaction([CONTENT_TAG_STORE_NAME], 'readwrite');
+        transaction.oncomplete = () => { console.log(`linkTagToContent transaction complete for: [contentId:${contentId}, tagId:${tagId}]`); };
         const store = transaction.objectStore(CONTENT_TAG_STORE_NAME);
         const link = { contentId: contentId, tagId: tagId };
         const request = store.add(link);
         request.onsuccess = (event) => { console.log(`Linked content ${contentId} with tag ${tagId}. Key:`, event.target.result); resolve(event.target.result); };
-        request.onerror = (event) => { if (event.target.error.name === 'ConstraintError') { console.warn(`Link between ${contentId} and ${tagId} already exists.`); resolve([contentId, tagId]); } else { console.error(`Error linking ${contentId} and ${tagId}:`, event.target.error); reject(`Error linking tag: ${event.target.error}`); } };
-        transaction.onerror = (event) => { console.error("Link Tag transaction error:", event.target.error); };
+        request.onerror = (event) => { if (event && event.target && event.target.error && event.target.error.name === 'ConstraintError') { console.warn(`Link between ${contentId} and ${tagId} already exists.`); resolve([contentId, tagId]); } else { console.error(`Error linking ${contentId} and ${tagId}:`, event && event.target && event.target.error ? event.target.error : event); if (event && event.target && event.target.error && event.target.error.stack) console.error(event.target.error.stack); reject(`Error linking tag: ${event && event.target && event.target.error ? event.target.error : event}`); } };
+        transaction.onerror = (event) => { console.error("Link Tag transaction error:", event && event.target && event.target.error ? event.target.error : event); if (event && event.target && event.target.error && event.target.error.stack) console.error(event.target.error.stack); };
     });
 }
 
