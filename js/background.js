@@ -686,6 +686,50 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
         break;
 
+      // --- Anonymize Item (AN-8) ---
+      case "ANONYMIZE_ITEM": {
+        const itemIdToAnon = message.payload?.id;
+        if (typeof itemIdToAnon !== "number") {
+          sendResponse({ success: false, error: "Invalid or missing item ID for anonymization." });
+          isResponseAsync = false;
+        } else {
+          (async () => {
+            try {
+              // Fetch the item
+              const items = await getContentItemsByIds([itemIdToAnon]);
+              const item = items && items[0];
+              if (!item) {
+                sendResponse({ success: false, error: `Item ${itemIdToAnon} not found.` });
+                return;
+              }
+
+              // Determine which field to anonymize (prefer text content)
+              const originalContent =
+                (typeof item.content === "string" && item.content) ||
+                (typeof item.htmlContent === "string" && item.htmlContent) ||
+                "";
+
+              const anonymized = anonymizeContent(originalContent);
+
+              // Update the stored item with anonymized content
+              await updateContentItem(itemIdToAnon, { content: anonymized });
+
+              // Trigger UI refresh timestamp
+              chrome.storage.local.set({ lastSaveTimestamp: Date.now() }, () => {
+                if (chrome.runtime.lastError)
+                  console.error("Error setting timestamp after anonymize:", chrome.runtime.lastError);
+              });
+
+              sendResponse({ success: true, id: itemIdToAnon, anonymizedContent: anonymized });
+            } catch (error) {
+              console.error(`ANONYMIZE_ITEM failed for ${itemIdToAnon}:`, error);
+              sendResponse({ success: false, error: error && error.message ? error.message : String(error) });
+            }
+          })();
+        }
+        break;
+      }
+
     // --- Tag Fetching ---
     case "GET_TAGS_FOR_ITEM":
       const contentIdForTags = message.payload?.contentId;
