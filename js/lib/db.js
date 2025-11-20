@@ -332,8 +332,10 @@ async function getContentItemsByIds(contentIds) {
 async function addTag(tagName) {
     if (!tagName || typeof tagName !== 'string' || tagName.trim().length === 0) return Promise.reject(new Error("Invalid tag name."));
     const trimmedTagName = tagName.trim();
+    // Normalize tags for canonical storage/lookup (make tags case-insensitive)
+    const normalizedTagName = trimmedTagName.toLowerCase();
     // TEMP LOG: trace db.addTag invocation (with stack)
-    console.log("db.addTag called with:", trimmedTagName);
+    console.log("db.addTag called with:", { original: trimmedTagName, normalized: normalizedTagName });
     console.trace("db.addTag trace");
     const dbInstance = await initDB();
     return new Promise((resolve, reject) => {
@@ -341,13 +343,32 @@ async function addTag(tagName) {
         transaction.oncomplete = () => { console.log(`addTag transaction complete for: "${trimmedTagName}"`); };
         const store = transaction.objectStore(TAG_STORE_NAME);
         const index = store.index('name');
-        const getRequest = index.get(trimmedTagName);
+        // Look up by the normalized form
+        const getRequest = index.get(normalizedTagName);
         getRequest.onsuccess = (event) => {
             const existingTag = event.target.result;
-            if (existingTag) { console.log(`Tag "${trimmedTagName}" exists (ID: ${existingTag.id})`); resolve(existingTag.id); }
-            else { console.log(`Adding new tag: "${trimmedTagName}"`); const addRequest = store.add({ name: trimmedTagName }); addRequest.onsuccess = (addEvent) => { console.log(`Tag "${trimmedTagName}" added (ID: ${addEvent.target.result})`); resolve(addEvent.target.result); }; addRequest.onerror = (addEvent) => { console.error(`Error adding tag "${trimmedTagName}":`, addEvent.target.error); reject(`Error adding tag: ${addEvent.target.error}`); }; }
+            if (existingTag) {
+                console.log(`Tag "${trimmedTagName}" (normalized: "${normalizedTagName}") exists (ID: ${existingTag.id})`);
+                resolve(existingTag.id);
+            } else {
+                console.log(`Adding new tag: "${trimmedTagName}" (normalized: "${normalizedTagName}")`);
+                // Store the normalized name as the canonical 'name' value
+                const addRequest = store.add({ name: normalizedTagName });
+                addRequest.onsuccess = (addEvent) => {
+                    console.log(`Tag "${normalizedTagName}" added (ID: ${addEvent.target.result})`);
+                    resolve(addEvent.target.result);
+                };
+                addRequest.onerror = (addEvent) => {
+                    console.error(`Error adding tag "${normalizedTagName}":`, addEvent.target.error);
+                    reject(`Error adding tag: ${addEvent.target.error}`);
+                };
+            }
         };
-        getRequest.onerror = (event) => { console.error(`Error checking tag "${trimmedTagName}":`, event.target.error); if (event.target && event.target.error && event.target.error.stack) console.error(event.target.error.stack); reject(`Error checking tag: ${event.target.error}`); };
+        getRequest.onerror = (event) => {
+            console.error(`Error checking tag "${trimmedTagName}":`, event.target.error);
+            if (event.target && event.target.error && event.target.error.stack) console.error(event.target.error.stack);
+            reject(`Error checking tag: ${event.target.error}`);
+        };
         transaction.onerror = (event) => { console.error("Add tag transaction error:", event && event.target && event.target.error ? event.target.error : event); if (event && event.target && event.target.error && event.target.error.stack) console.error(event.target.error.stack); };
     });
 }
@@ -364,7 +385,9 @@ async function getTagByName(tagName) {
         const transaction = dbInstance.transaction([TAG_STORE_NAME], 'readonly');
         const store = transaction.objectStore(TAG_STORE_NAME);
         const index = store.index('name');
-        const request = index.get(tagName.trim());
+        // Normalize lookup to match stored canonical form
+        const lookupName = tagName.trim().toLowerCase();
+        const request = index.get(lookupName);
         request.onsuccess = (event) => resolve(event.target.result || null);
         request.onerror = (event) => { console.error(`Error getting tag by name "${tagName}":`, event.target.error); reject(`Error getting tag: ${event.target.error}`); };
     });
