@@ -44,18 +44,23 @@ async function generatePagePDF(tabId, options = {}) {
         // Wait for page to be ready
         await chrome.debugger.sendCommand({ tabId }, "Runtime.enable");
         
-        // Generate PDF
+        // Generate PDF with timeout protection
         console.log(`[PDF] Generating PDF with options:`, pdfOptions);
-        const result = await chrome.debugger.sendCommand(
-            { tabId }, 
-            "Page.printToPDF", 
+        const PDF_TIMEOUT_MS = 120000; // 2 minute timeout
+        const pdfPromise = chrome.debugger.sendCommand(
+            { tabId },
+            "Page.printToPDF",
             pdfOptions
         );
-        
+        const timeoutPromise = new Promise((_, reject) =>
+            setTimeout(() => reject(new Error("PDF generation timed out after 2 minutes. Try selecting fewer tags or items.")), PDF_TIMEOUT_MS)
+        );
+        const result = await Promise.race([pdfPromise, timeoutPromise]);
+
         if (!result || !result.data) {
             throw new Error("PDF generation failed - no data returned");
         }
-        
+
         console.log(`[PDF] PDF generated successfully (${result.data.length} characters)`);
         return result.data; // Base64 encoded PDF
         

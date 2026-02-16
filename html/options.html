@@ -53,10 +53,26 @@
                     <input type="file" id="importFileInput" style="display: none;" accept=".json">
                 </div>
             </div>
+            <div class="setting" style="margin-top: 16px;">
+                <label>Storage Usage:</label>
+                <div id="storageUsageBar" style="background: #e0e0e0; border-radius: 6px; height: 22px; width: 100%; max-width: 400px; overflow: hidden; position: relative; margin-top: 4px;">
+                    <div id="storageUsageFill" style="background: #4a90d9; height: 100%; width: 0%; transition: width 0.3s ease; border-radius: 6px;"></div>
+                    <span id="storageUsageLabel" style="position: absolute; top: 0; left: 0; right: 0; text-align: center; line-height: 22px; font-size: 12px; color: #333; font-weight: 500;"></span>
+                </div>
+                <p id="storageUsageDetail" class="help-text" style="margin-top: 4px;"></p>
+            </div>
         </section>
 
         <section class="settings-section">
         <h2>Report Defaults</h2>
+
+        <!-- === NEW NAVIGATION STRIPPING OPTION (AN-7) === -->
+        <label>
+            <input id="stripNavigation" type="checkbox">
+            Strip Navigation, Header & Footer (Privacy/Cleanup)
+            <div class="desc">Automatically remove common navigation elements (e.g., sidebars, footers, menus) before saving page content.</div>
+        </label>
+        <!-- ============================================== -->
 
         <label>
             <input id="cloudAssist" type="checkbox">
@@ -115,6 +131,19 @@
                  <p class="help-text">Choose the visual theme for the extension popup and options page.</p>
             </div>
         </section>
+        
+        <!-- Utility Links Section (Assuming AN-1 implementation) -->
+        <section class="settings-section">
+            <h2>🔗 Utility Links (Debug)</h2>
+            <div class="backup-actions" style="display: block; gap: 10px;">
+                <a href="../html/data_viewer.html" target="_blank" class="backup-btn drive-btn" style="text-decoration: none;">View Database</a>
+                <a href="../html/ai-worker.html" target="_blank" class="backup-btn drive-btn" style="text-decoration: none;">AI Worker Console</a>
+                <a href="../html/optionsWdrive.html" target="_blank" class="backup-btn drive-btn" style="text-decoration: none;">Google Drive Settings</a>
+            </div>
+            <p class="help-text" style="margin-top: 10px;">These pages open in a new tab for debugging and advanced configuration.</p>
+        </section>
+        <!-- End Utility Links Section -->
+
 
         <div class="actions">
              <button id="saveSettingsBtn">Save Settings</button>

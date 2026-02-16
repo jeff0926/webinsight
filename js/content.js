@@ -1,4 +1,4 @@
-// js/content.js - Injected into web pages (Fix: Re-add text/HTML extraction)
+
 
 console.log("WebInsight Content Script Loaded (v Link Extraction + Fix)");
 
@@ -17,7 +17,7 @@ let isSelecting = false;
 // PLUS identifiers: host, canonicalUrl, slug, siteName, section, author, publisher, datePublished, dateModified, contentType
 function getPageData() {
   const doc = document;
-
+  const metadata = extractPageMetadata(doc);
   const getMeta = (sel) =>
     doc.querySelector(sel)?.getAttribute("content") || null;
   const getOG = (prop) =>
@@ -364,41 +364,84 @@ function handleMouseUp(event) {
   if (selectionBox) selectionBox.style.display = "none";
 
   // Get full page data (including text/html/links)
-  const pageData = getPageData();
-  const payload = {
-    rect: rect,
-    devicePixelRatio: window.devicePixelRatio || 1,
-    url: pageData.url,
-    title: pageData.title,
-    lang: pageData.lang,
-    description: pageData.description,
-    keywords: pageData.keywords,
-    links: pageData.links,
-    // NOTE: text and html from pageData are NOT needed for area capture
-  };
+  
+function getPageData() {
+  const doc = document;
 
-  setTimeout(() => {
-    chrome.runtime.sendMessage(
-      { type: "CAPTURE_AREA_FROM_CONTENT", payload },
-      (response) => {
-        if (chrome.runtime.lastError) {
-          console.error(
-            "Error sending capture message:",
-            chrome.runtime.lastError.message
-          );
-        } else if (response && response.success) {
-          console.log("Area capture request sent successfully.");
-        } else {
-          console.error(
-            "Background script failed capture request:",
-            response?.error
-          );
-        }
-        cleanupSelectionMode();
+  const getMeta = (sel) =>
+    doc.querySelector(sel)?.getAttribute("content") || null;
+
+  // Visible text
+  let text = "";
+  try {
+    text = doc.body?.innerText || "";
+  } catch {}
+
+  // Full HTML
+  let html = "";
+  try {
+    html = doc.documentElement?.outerHTML || "";
+  } catch {}
+
+  // Links (http/https only), capped to 200
+  const baseURI = doc.baseURI || location.origin;
+  const skip = ["javascript:", "mailto:", "tel:", "data:"];
+  const links = Array.from(doc.body?.querySelectorAll("a[href]") || [])
+    .map((a) => {
+      const raw = a.getAttribute("href");
+      if (!raw) return null;
+      const low = raw.trim().toLowerCase();
+      if (low.startsWith("#") || skip.some((p) => low.startsWith(p)))
+        return null;
+      try {
+        const url = new URL(raw, baseURI).href;
+        if (!/^https?:/i.test(url)) return null;
+        return { text: (a.innerText || a.textContent || "").trim(), url };
+      } catch {
+        return null;
       }
-    );
-  }, 50);
+    })
+    .filter(Boolean)
+    .slice(0, 200);
+
+  return {
+    url: window.location.href,
+    title: doc.title || "Untitled Page",
+    lang: doc.documentElement.lang || null,
+
+    // ✅ Standard meta
+    metaDescription: getMeta('meta[name="description"]'),
+    metaKeywords: getMeta('meta[name="keywords"]'),
+
+    // ✅ OpenGraph
+    og: {
+      title: getMeta('meta[property="og:title"]'),
+      description: getMeta('meta[property="og:description"]'),
+      image: getMeta('meta[property="og:image"]'),
+      siteName: getMeta('meta[property="og:site_name"]'),
+      type: getMeta('meta[property="og:type"]'),
+    },
+
+    // ✅ Twitter Cards
+    twitter: {
+      title: getMeta('meta[name="twitter:title"]'),
+      description: getMeta('meta[name="twitter:description"]'),
+      image: getMeta('meta[name="twitter:image"]'),
+    },
+
+    links,
+    text,
+    html,
+  };
 }
+
+
+
+
+
+
+
+
 
 /** Handles the keydown event, specifically listening for ESC to cancel selection. */
 function handleKeyDown(event) {

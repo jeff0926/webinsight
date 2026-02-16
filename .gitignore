@@ -45,6 +45,9 @@ coverage/
 # Dependency directories
 jspm_packages/
 
+# say to day and arch
+details/
+
 # Optional npm cache directory
 .npm
 

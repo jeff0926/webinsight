@@ -20,6 +20,9 @@ import {
   getAllContentTags,
   clearAllData,
   bulkImportData,
+  getContentItemCount,
+  getContentItemsPage,
+  streamAllContentItems,
 } from "./lib/db.js";
 import {
   analyzeImageWithGemini,
@@ -33,6 +36,11 @@ import {
   PDFPresets,
 } from "./lib/pdf-generator.js";
 import { localAI } from "./lib/local-ai.js"; // This is currently the keyword-based AI
+import {
+  DRAWIO_EXTRACTION_SCHEMA,
+  DRAWIO_EXTRACTION_PROMPT,
+  buildDrawioXml,
+} from "./lib/drawio-generator.js";
 
 // --- Constants ---
 const MAX_ITEMS_FOR_SUMMARY = 5;
@@ -637,6 +645,26 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           });
         });
       break;
+    case "GET_CONTENT_ITEMS_COUNT":
+      getContentItemCount()
+        .then((count) => sendResponse({ success: true, payload: count }))
+        .catch((error) => {
+          console.error("Error counting content items:", error);
+          sendResponse({ success: false, error: `Failed to count items: ${error.message}` });
+        });
+      break;
+    case "GET_CONTENT_ITEMS_PAGE":
+      {
+        const offset = message.payload?.offset ?? 0;
+        const limit = message.payload?.limit ?? 50;
+        getContentItemsPage(offset, limit)
+          .then((items) => sendResponse({ success: true, payload: items }))
+          .catch((error) => {
+            console.error("Error getting content items page:", error);
+            sendResponse({ success: false, error: `Failed to load items page: ${error.message}` });
+          });
+      }
+      break;
     case "DELETE_ITEM":
       const itemIdToDelete = message.payload?.id;
       if (typeof itemIdToDelete !== "number") {
@@ -772,16 +800,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     });
                     isResponseAsync = false;
                 } else {
-                      const trimmedTagName = addTagName.trim();
                       // TEMP LOG: trace incoming add-tag request with sender info and a stack trace
-                      console.log("ADD_TAG_TO_ITEM payload:", { contentId: addContentId, tagName: trimmedTagName });
+                      console.log("ADD_TAG_TO_ITEM payload:", { contentId: addContentId, tagName: addTagName });
                       console.log("ADD_TAG_TO_ITEM invoked by sender:", sender);
                       console.trace("ADD_TAG_TO_ITEM trace");
 
                       // Indicate we are starting the DB flow
-                      console.log("background: starting addTag -> linkTagToContent flow for:", trimmedTagName);
+                      console.log("background: starting addTag -> linkTagToContent flow for:", addTagName);
 
-                      addTag(trimmedTagName)
+                      addTag(addTagName)
                         .then((tagId) => {
                           console.log("background: addTag resolved with tagId:", tagId);
                           if (typeof tagId !== "number")
@@ -803,7 +830,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                                     );
                             });
                           // SHORT-LIVED DEBUG: echo the response payload we're about to send
-                          const successPayload = { success: true, message: `Tag '${trimmedTagName}' added or already linked.` };
+                          const successPayload = { success: true, message: `Tag '${addTagName}' added or already linked.` };
                           console.log("background -> sendResponse (ADD_TAG_TO_ITEM):", successPayload);
                           try { sendResponse(successPayload); } catch (e) { console.error("sendResponse threw:", e); }
                         })
@@ -872,31 +899,67 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           });
         });
       break;
-    case "GET_FILTERED_ITEMS_BY_TAG":
-      const filterTagId = message.payload?.tagId;
-      if (typeof filterTagId !== "number") {
-        sendResponse({ success: false, error: "Invalid tagId for filtering." });
-        isResponseAsync = false;
-      } else {
-        getContentIdsByTagId(filterTagId)
-          .then((contentIds) =>
-            contentIds && contentIds.length > 0
-              ? getContentItemsByIds(contentIds)
-              : []
-          )
-          .then((items) => sendResponse({ success: true, payload: items }))
-          .catch((error) => {
-            console.error(
-              `Error filtering items by tag ${filterTagId}:`,
-              error
-            );
-            sendResponse({
-              success: false,
-              error: `Failed filter items: ${error.message}`,
-            });
-          });
-      }
-      break;
+    
+            case "GET_FILTERED_ITEMS_BY_TAG":
+              const filterTagId = message.payload?.tagId;
+              if (typeof filterTagId !== "number") {
+                sendResponse({ success: false, error: "Invalid tagId for filtering." });
+                isResponseAsync = false;
+              } else {
+                getContentIdsByTagId(filterTagId)
+                  .then((contentIds) =>
+                    contentIds && contentIds.length > 0
+                      ? getContentItemsByIds(contentIds)
+                      : []
+                  )
+                  .then((items) => sendResponse({ success: true, payload: items }))
+                  .catch((error) => {
+                    console.error(
+                      `Error filtering items by tag ${filterTagId}:`,
+                      error
+                    );
+                    sendResponse({
+                      success: false,
+                      error: `Failed filter items: ${error.message}`,
+                    });
+                  });
+              }
+              break;
+      case "GET_FILTERED_ITEMS_BY_TAGS_OR":
+        const filterTagIds = message.payload?.tagIds;
+        if (!Array.isArray(filterTagIds) || filterTagIds.length === 0) {
+          sendResponse({ success: false, error: "Invalid or empty tagIds array for filtering." });
+          isResponseAsync = false;
+        } else {
+          (async () => {
+            try {
+              const allContentIds = new Set();
+              for (const tagId of filterTagIds) {
+                try {
+                  const contentIds = await getContentIdsByTagId(tagId);
+                  contentIds.forEach(id => allContentIds.add(id));
+                } catch (error) {
+                  console.warn(`Could not retrieve content IDs for tag ${tagId}:`, error);
+                  // Continue to next tag even if one fails
+                }
+              }
+
+              const finalContentIds = Array.from(allContentIds);
+              const items = finalContentIds.length > 0
+                ? await getContentItemsByIds(finalContentIds)
+                : [];
+                
+              sendResponse({ success: true, payload: items });
+            } catch (error) {
+              console.error(`Error filtering items by tags (OR):`, error);
+              sendResponse({
+                success: false,
+                error: `Failed to filter items by tags: ${error.message}`,
+              });
+            }
+          })();
+        }
+        break;        
     case "GET_ALL_CONTENT_TAGS":
       getAllContentTags()
         .then((links) => sendResponse({ success: true, payload: links }))
@@ -915,6 +978,52 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         .catch((error) =>
           sendResponse({ success: false, error: error.message })
         );
+      break;
+
+    case "EXPORT_FULL_BACKUP_DOWNLOAD":
+      (async () => {
+        try {
+          const allChunks = [];
+          await streamAllContentItems(100, (chunk) => {
+            allChunks.push(...chunk);
+          });
+          const [tags, contentTags] = await Promise.all([
+            getAllTags(),
+            getAllContentTags(),
+          ]);
+          const backupData = {
+            version: "1.0",
+            exportedAt: new Date().toISOString(),
+            contentItems: allChunks,
+            tags,
+            contentTags,
+          };
+          const jsonString = JSON.stringify(backupData, null, 2);
+          const blob = new Blob([jsonString], { type: "application/json" });
+          const dataUrl = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = () => reject(new Error("Failed to read blob"));
+            reader.readAsDataURL(blob);
+          });
+          const timestamp = new Date()
+            .toISOString()
+            .slice(0, 19)
+            .replace(/[T:]/g, "-");
+          await chrome.downloads.download({
+            url: dataUrl,
+            filename: `webinsight-backup-${timestamp}.json`,
+            saveAs: true,
+          });
+          sendResponse({ success: true });
+        } catch (error) {
+          console.error("Error during direct backup download:", error);
+          sendResponse({
+            success: false,
+            error: error.message || String(error),
+          });
+        }
+      })();
       break;
 
     // --- IMPORT APP / Project Data (full backups) ---
@@ -962,21 +1071,26 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       break;
 
     case "GENERATE_PDF_REPORT_FOR_TAG":
-      const reportTagId = message.payload?.tagId;
-      if (typeof reportTagId !== "number") {
+      // Support both single tagId (legacy) and tagIds array (multi-tag)
+      const reportTagIds = Array.isArray(message.payload?.tagIds)
+        ? message.payload.tagIds
+        : typeof message.payload?.tagId === "number"
+          ? [message.payload.tagId]
+          : null;
+      if (!reportTagIds || reportTagIds.length === 0 || !reportTagIds.every(id => typeof id === "number")) {
         sendResponse({
           success: false,
-          error: "Invalid tagId provided for PDF report generation.",
+          error: "Invalid tagId(s) provided for PDF report generation.",
         });
         isResponseAsync = false;
       } else {
-        handleGeneratePDFReport(reportTagId)
+        handleGeneratePDFReport(reportTagIds)
           .then((result) => {
             sendResponse(result);
           })
           .catch((error) => {
             console.error(
-              `Critical error in handleGeneratePDFReport for tag ${reportTagId}:`,
+              `Critical error in handleGeneratePDFReport for tags ${reportTagIds}:`,
               error
             );
             sendResponse({
@@ -1029,6 +1143,134 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         },
       });
       isResponseAsync = false;
+      break;
+
+    case "CONVERT_TO_DRAWIO":
+      (async () => {
+        try {
+          const drawioItemId = message.payload?.itemId;
+          if (typeof drawioItemId !== "number") {
+            sendResponse({ success: false, error: "Invalid item ID." });
+            return;
+          }
+
+          // 1. Fetch the item to get the screenshot data URL
+          const items = await getContentItemsByIds([drawioItemId]);
+          const item = items && items[0];
+          if (!item || !item.content || !item.content.startsWith("data:image")) {
+            sendResponse({ success: false, error: "Item not found or is not a screenshot." });
+            return;
+          }
+
+          console.log(`[DrawIO] Starting rich extraction for item ${drawioItemId}...`);
+          sendPanelStatus("Analyzing diagram for draw.io conversion...", "info");
+
+          // 2. Call Gemini with the rich extraction prompt + schema
+          const geminiResponse = await analyzeImageWithGemini(
+            item.content,
+            DRAWIO_EXTRACTION_PROMPT,
+            {
+              forceJson: true,
+              schema: DRAWIO_EXTRACTION_SCHEMA,
+              temperature: 0.1,
+              maxOutputTokens: 65536,
+            }
+          );
+
+          const jsonText = extractTextFromResult(geminiResponse);
+          if (!jsonText) {
+            sendResponse({ success: false, error: "Gemini returned no content for draw.io extraction." });
+            return;
+          }
+
+          let extractionData;
+          try {
+            extractionData = JSON.parse(jsonText);
+          } catch (parseErr) {
+            console.error("[DrawIO] Strict parse failed, attempting loose parse...", parseErr.message);
+            // Try loose parsing: strip code fences, fix trailing commas
+            const looseResult = parseJsonLoose(jsonText);
+            if (looseResult.ok) {
+              extractionData = looseResult.value;
+              console.log("[DrawIO] Loose parse succeeded.");
+            } else {
+              console.error("[DrawIO] Loose parse also failed:", looseResult.error);
+              console.error("[DrawIO] Raw response (first 500 chars):", jsonText.substring(0, 500));
+              sendResponse({ success: false, error: `Failed to parse extraction JSON: ${parseErr.message}` });
+              return;
+            }
+          }
+
+          console.log("[DrawIO] Extraction received:", {
+            type: extractionData.diagram_type,
+            containers: (extractionData.containers || []).length,
+            components: (extractionData.components || []).length,
+            connections: (extractionData.connections || []).length,
+          });
+
+          // 3. Build draw.io XML
+          sendPanelStatus("Building draw.io XML...", "info");
+          const drawioXml = buildDrawioXml(extractionData);
+
+          // 4. Trigger download via Blob → base64 data URL (reliable in service workers)
+          const blob = new Blob([drawioXml], { type: "application/xml" });
+          const dataUrl = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = () => reject(new Error("Failed to create download data URL"));
+            reader.readAsDataURL(blob);
+          });
+
+          const safeTitle = (item.title || "diagram")
+            .replace(/[^a-zA-Z0-9_-]/g, "_")
+            .substring(0, 40);
+          const timestamp = new Date().toISOString().slice(0, 10);
+          const filename = `${safeTitle}_${timestamp}.drawio`;
+
+          const downloadId = await chrome.downloads.download({
+            url: dataUrl,
+            filename: filename,
+            saveAs: true,
+          });
+          console.log(`[DrawIO] Download initiated, downloadId: ${downloadId}`);
+
+          console.log(`[DrawIO] File downloaded: ${filename}`);
+          sendPanelStatus("draw.io file downloaded successfully!", "success");
+          sendResponse({ success: true, filename: filename });
+        } catch (error) {
+          console.error("[DrawIO] Conversion failed:", error);
+          sendPanelStatus(`draw.io conversion failed: ${error.message}`, "error");
+          sendResponse({ success: false, error: error.message || String(error) });
+        }
+      })();
+      break;
+
+    case "GET_STORAGE_ESTIMATE":
+      (async () => {
+        try {
+          if (navigator.storage && navigator.storage.estimate) {
+            const estimate = await navigator.storage.estimate();
+            sendResponse({
+              success: true,
+              payload: {
+                usage: estimate.usage || 0,
+                quota: estimate.quota || 0,
+              },
+            });
+          } else {
+            sendResponse({
+              success: false,
+              error: "Storage estimation API not available.",
+            });
+          }
+        } catch (error) {
+          console.error("Error estimating storage:", error);
+          sendResponse({
+            success: false,
+            error: `Storage estimate failed: ${error.message}`,
+          });
+        }
+      })();
       break;
 
     // --- Default ---
@@ -1286,6 +1528,34 @@ async function getSavingPreferences() {
     }
 }
 
+/**
+ * AN-7: Strips common navigation/boilerplate elements from the page DOM.
+ * This function is serialized and injected into the page via chrome.scripting.executeScript(),
+ * so it must be entirely self-contained with no external references.
+ */
+function stripNavigationElements() {
+  const selectors = [
+    'nav', 'header', 'footer',
+    '[role="navigation"]', '[role="banner"]', '[role="contentinfo"]',
+    '.navbar', '.nav-bar', '.navigation',
+    '.site-header', '.site-footer',
+    '.sidebar', '.side-bar', '[role="complementary"]',
+    '.cookie-banner', '.cookie-consent',
+    '.ads', '.advertisement',
+    '#header', '#footer', '#nav', '#navigation', '#sidebar'
+  ];
+  let removed = 0;
+  for (const sel of selectors) {
+    try {
+      const els = document.querySelectorAll(sel);
+      for (const el of els) {
+        el.remove();
+        removed++;
+      }
+    } catch (_) { /* skip invalid selectors */ }
+  }
+  return removed;
+}
 
 /**
  * Gathers all data from IndexedDB and prepares it for export.
@@ -1837,6 +2107,17 @@ async function saveContent(item) {
     return itemId;
   } catch (error) {
     console.error("Error during saveContent:", error);
+    const errMsg = (error && error.message) ? error.message : String(error);
+    if (
+      errMsg.includes("QuotaExceededError") ||
+      errMsg.includes("quota") ||
+      errMsg.includes("storage") ||
+      (error && error.name === "QuotaExceededError")
+    ) {
+      throw new Error(
+        "Storage quota exceeded. Go to Settings and export a backup, then delete old items to free space."
+      );
+    }
     throw error;
   }
 }
@@ -2438,54 +2719,66 @@ chrome.storage.local.get(["autoBackup"], (result) => {
 // Add these functions at the end of background.js (before the final console.log)
 
 /**
- * Generates a comprehensive PDF report for all items with a specific tag
- * @param {number} tagId - The tag ID to generate report for
+ * Generates a comprehensive PDF report for all items across one or more tags.
+ * @param {number[]} tagIds - Array of tag IDs to include in the report
  * @returns {Promise<object>} Success response with filename or error response
  */
-async function handleGeneratePDFReport(tagId) {
+async function handleGeneratePDFReport(tagIds) {
   console.log(
-    `[PDFReport] Starting PDF report generation for tag ID: ${tagId}`
+    `[PDFReport] Starting PDF report generation for tag IDs: ${tagIds.join(", ")}`
   );
 
   try {
-    // Step 1: Get tag name and check for existing key points
-    sendPanelStatus(`[1/4] Preparing data for tag ID ${tagId}...`, 'info');
-    
-    let tagName = `Tag ${tagId}`;
-    let keyPointsContent = null;
-    let sourceInfo = "";
+    // Step 1: Get tag names for all selected tags
+    sendPanelStatus(`[1/4] Preparing data for ${tagIds.length} tag(s)...`, 'info');
 
+    let tagNames = [];
     try {
-      const tags = await getTagsByIds([tagId]);
-      if (tags && tags.length > 0 && tags[0].name) {
-        tagName = tags[0].name;
+      const tags = await getTagsByIds(tagIds);
+      if (tags && tags.length > 0) {
+        tagNames = tags.map(t => t.name).filter(Boolean);
       }
     } catch (tagFetchError) {
-      console.warn(`[PDFReport] Could not fetch name for tag ID: ${tagId}`);
+      console.warn(`[PDFReport] Could not fetch names for tag IDs: ${tagIds}`);
     }
+    if (tagNames.length === 0) {
+      tagNames = tagIds.map(id => `Tag ${id}`);
+    }
+    const tagName = tagNames.join(", ");
+    const primaryTagId = tagIds[0];
 
-    // Step 2: Get all items for this tag
-    const contentIds = await getContentIdsByTagId(tagId);
-    if (!contentIds || contentIds.length === 0) {
-      return { success: false, error: "No content items found for this tag." };
+    // Step 2: Get all items across ALL selected tags (deduplicated by item id)
+    const contentIdSet = new Set();
+    for (const tid of tagIds) {
+      const ids = await getContentIdsByTagId(tid);
+      if (ids) ids.forEach(id => contentIdSet.add(id));
+    }
+    const contentIds = Array.from(contentIdSet);
+
+    if (contentIds.length === 0) {
+      return { success: false, error: "No content items found for the selected tag(s)." };
     }
 
     const allItems = await getContentItemsByIds(contentIds);
     if (!allItems || allItems.length === 0) {
       return {
         success: false,
-        error: "Could not retrieve content items for this tag.",
+        error: "Could not retrieve content items for the selected tag(s).",
       };
     }
-    
+    console.log(`[PDFReport] Found ${allItems.length} unique items across ${tagIds.length} tag(s)`);
+
     // Step 3: Check for existing key points or generate them
     const existingKeyPoints = allItems.find(
       (item) =>
         item.type === GENERATED_ITEM_TYPE &&
         item.analysisType === "key_points" &&
         item.sourceTagIds &&
-        item.sourceTagIds.includes(tagId)
+        tagIds.some(tid => item.sourceTagIds.includes(tid))
     );
+
+    let keyPointsContent = null;
+    let sourceInfo = "";
 
     if (existingKeyPoints) {
       console.log(
@@ -2494,13 +2787,13 @@ async function handleGeneratePDFReport(tagId) {
       keyPointsContent = existingKeyPoints.content;
       sourceInfo =
         existingKeyPoints.sourceInfo ||
-        `Generated from items tagged "${tagName}" (ID ${tagId}).`;
+        `Generated from items tagged "${tagName}".`;
     } else {
       sendPanelStatus(`[2/4] Generating Key Points (AI call)...`, 'info');
       console.log(
         `[PDFReport] No existing key points found, generating new ones...`
       );
-      const keyPointsResult = await handleGetKeyPoints(tagId);
+      const keyPointsResult = await handleGetKeyPoints(primaryTagId);
       if (keyPointsResult.success) {
         keyPointsContent = keyPointsResult.keyPoints;
         sourceInfo = keyPointsResult.sourceInfo;
@@ -2510,38 +2803,52 @@ async function handleGeneratePDFReport(tagId) {
           `[PDFReport] Failed to generate key points: ${keyPointsResult.error}`
         );
         keyPointsContent = "Key points could not be generated for this report.";
-        sourceInfo = `Report generated from ${allItems.length} items tagged "${tagName}" (ID ${tagId}).`;
+        sourceInfo = `Report generated from ${allItems.length} items across tags: "${tagName}".`;
       }
     }
-    
+
     // Step 4: Build PDF content (HTML preparation)
-    sendPanelStatus(`[3/4] Compiling report HTML...`, 'info');
+    sendPanelStatus(`[3/4] Compiling report HTML (${allItems.length} items across ${tagIds.length} tag(s))...`, 'info');
     const reportHTML = await buildReportHTML(
       tagName,
-      tagId,
+      primaryTagId,
       allItems,
       keyPointsContent,
       sourceInfo
     );
-    
-    // Step 5: Generate PDF from HTML (The long step)
-    sendPanelStatus(`[4/4] Rendering PDF document (may take 30+ seconds)...`, 'info');
-    const filename = generateReportFilename(tagName);
-    const pdfResult = await generatePDFFromHTML(reportHTML, filename);
-    
+
+    // Step 5: Generate PDF from HTML (The long step) — with heartbeat status
+    const htmlSizeMB = (reportHTML.length / (1024 * 1024)).toFixed(1);
+    sendPanelStatus(`[4/4] Rendering PDF (${htmlSizeMB}MB HTML, ${allItems.length} items)... This may take a minute.`, 'info');
+    const filenameLabel = tagNames[0] + (tagNames.length > 1 ? `_+${tagNames.length - 1}` : "");
+    const filename = generateReportFilename(filenameLabel);
+
+    // Heartbeat: update status every 10 seconds while PDF renders
+    let elapsed = 0;
+    const heartbeat = setInterval(() => {
+      elapsed += 10;
+      sendPanelStatus(`[4/4] Still rendering PDF... (${elapsed}s elapsed, ${htmlSizeMB}MB)`, 'info');
+    }, 10000);
+
+    let pdfResult;
+    try {
+      pdfResult = await generatePDFFromHTML(reportHTML, filename);
+    } finally {
+      clearInterval(heartbeat);
+    }
+
     // Step 6: Finalize
     console.log(`[PDFReport] PDF report generated successfully: ${filename}`);
     return {
       success: true,
       filename: filename,
-      message: `PDF report generated successfully for tag "${tagName}"`,
+      message: `PDF report generated successfully for tags: "${tagName}"`,
     };
   } catch (error) {
     console.error(
-      `[PDFReport] Error generating PDF report for tag ${tagId}:`,
+      `[PDFReport] Error generating PDF report for tags ${tagIds}:`,
       error
     );
-    // On failure, send error status to panel
     sendPanelStatus(`Error: ${error.message}`, 'error');
     return {
       success: false,
@@ -2718,16 +3025,29 @@ async function buildItemHTML(item, itemNumber, focusTagName, focusTagId) {
   switch (item.type) {
     case "page":
     case "selection":
-      contentHTML = `<div class="content-text">${escapeHTML(
-        item.content || "No content available."
-      )}</div>`;
+      {
+        // Cap text content at 5000 chars to keep report HTML manageable
+        const MAX_TEXT = 5000;
+        let text = item.content || "No content available.";
+        const truncated = text.length > MAX_TEXT;
+        if (truncated) text = text.substring(0, MAX_TEXT);
+        contentHTML = `<div class="content-text">${escapeHTML(text)}${truncated ? '\n\n[... truncated — full text available in WebInsight panel]' : ''}</div>`;
+      }
       if (item.wordCount) {
         contentHTML += `<p><small>Word Count: ${item.wordCount}, Est. Reading Time: ${item.readingTimeMinutes} min</small></p>`;
       }
       break;
 
     case "screenshot":
-      contentHTML = `<img src="${item.content}" alt="Screenshot from item ${item.id}" class="screenshot-img">`;
+      // Do NOT embed base64 screenshots in report HTML — they make the PDF
+      // renderer hang or crash. Include the AI analysis text instead, which
+      // is the valuable part for a research report.
+      {
+        const imgSizeKB = item.content ? Math.round(item.content.length / 1024) : 0;
+        contentHTML = `<div style="padding:12px 16px;background:#f6f8fa;border:1px solid #e1e4e8;border-radius:4px;margin:8px 0;">
+          <p style="margin:0;color:#586069;font-size:0.9em;">📷 <strong>Screenshot</strong> (${imgSizeKB > 1024 ? (imgSizeKB/1024).toFixed(1)+'MB' : imgSizeKB+'KB'}) — view in WebInsight panel, Item #${item.id}</p>
+        </div>`;
+      }
 
       if (item.analysis) {
         analysisHTML = '<div class="ai-analysis"><h4>AI Analysis Summary</h4>';
@@ -2874,6 +3194,7 @@ function escapeHTML(text) {
  * Generates PDF from HTML content using Chrome DevTools Protocol
  */
 async function generatePDFFromHTML(htmlContent, filename) {
+  let tabId = null;
   try {
     // Create a data URL from the HTML content
     const dataUrl =
@@ -2881,9 +3202,32 @@ async function generatePDFFromHTML(htmlContent, filename) {
 
     // Create a new tab with the HTML content
     const tab = await chrome.tabs.create({ url: dataUrl, active: false });
+    tabId = tab.id;
 
-    // Wait for the tab to load
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+    // Wait for the tab to fully load (instead of fixed timeout)
+    await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        chrome.tabs.onUpdated.removeListener(listener);
+        resolve(); // proceed anyway after 15s
+      }, 15000);
+      function listener(updatedTabId, changeInfo) {
+        if (updatedTabId === tabId && changeInfo.status === "complete") {
+          chrome.tabs.onUpdated.removeListener(listener);
+          clearTimeout(timeout);
+          // Small extra delay for rendering
+          setTimeout(resolve, 500);
+        }
+      }
+      chrome.tabs.onUpdated.addListener(listener);
+      // If tab is already complete (small HTML), resolve immediately
+      if (tab.status === "complete") {
+        chrome.tabs.onUpdated.removeListener(listener);
+        clearTimeout(timeout);
+        setTimeout(resolve, 500);
+      }
+    });
+
+    console.log(`[PDFReport] Tab ${tabId} loaded, generating PDF...`);
 
     // Generate PDF using the same method as page PDF
     const pdfOptions = {
@@ -2898,10 +3242,11 @@ async function generatePDFFromHTML(htmlContent, filename) {
       marginRight: 0.5,
     };
 
-    const pdfBase64 = await generatePagePDF(tab.id, pdfOptions);
+    const pdfBase64 = await generatePagePDF(tabId, pdfOptions);
 
     // Close the temporary tab
-    await chrome.tabs.remove(tab.id);
+    try { await chrome.tabs.remove(tabId); } catch (_) {}
+    tabId = null;
 
     if (!pdfBase64) {
       throw new Error("PDF generation returned empty data");
@@ -2921,6 +3266,8 @@ async function generatePDFFromHTML(htmlContent, filename) {
     return { success: true, filename: filename };
   } catch (error) {
     console.error("[PDFReport] Error generating PDF from HTML:", error);
+    // Clean up tab on failure
+    if (tabId) { try { await chrome.tabs.remove(tabId); } catch (_) {} }
     throw error;
   }
 }

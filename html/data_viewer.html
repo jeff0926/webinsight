@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>WebInsight - IndexedDB Data Viewer</title>
     <link rel="stylesheet" href="../css/data_viewer.css">
+    
+    <script src="../js/lib/vis-network.min.js"></script>
 </head>
 <body>
     <div class="container">
@@ -14,8 +16,17 @@
         <hr>
 
         <section>
+            <h2>🧠 Content-Tag Relationship Graph</h2>
+            <p>Visualizes the links between Content Items (blue) and Tags (green).</p>
+            <div id="knowledgeGraphContainer" style="height: 500px; border: 1px solid #e1e4e8; border-radius: 4px; background-color: #fff;">
+                Loading Graph...
+            </div>
+        </section>
+
+        <hr>
+        <section>
             <h2><code>contentItems</code> Store</h2>
-            <button class="exportBtn" id="exportContentItemsBtn" data-messagetype="GET_ALL_SAVED_CONTENT" data-filename="contentItems_export.json">Export JSON</button> {/* Added Export Button */}
+            <button class="exportBtn" id="exportContentItemsBtn" data-messagetype="GET_ALL_SAVED_CONTENT" data-filename="contentItems_export.json">Export JSON</button> 
             <pre><code id="contentItemsJson">Loading...</code></pre>
         </section>
 
@@ -23,7 +34,7 @@
 
         <section>
             <h2><code>tags</code> Store</h2>
-            <button class="exportBtn" id="exportTagsBtn" data-messagetype="GET_ALL_TAGS" data-filename="tags_export.json">Export JSON</button> {/* Added Export Button */}
+            <button class="exportBtn" id="exportTagsBtn" data-messagetype="GET_ALL_TAGS" data-filename="tags_export.json">Export JSON</button> 
             <pre><code id="tagsJson">Loading...</code></pre>
         </section>
 
@@ -31,7 +42,7 @@
 
         <section>
             <h2><code>contentTags</code> Store (Links)</h2>
-             <button class="exportBtn" id="exportContentTagsBtn" data-messagetype="GET_ALL_CONTENT_TAGS" data-filename="contentTags_export.json">Export JSON</button> {/* Added Export Button */}
+             <button class="exportBtn" id="exportContentTagsBtn" data-messagetype="GET_ALL_CONTENT_TAGS" data-filename="contentTags_export.json">Export JSON</button> 
             <pre><code id="contentTagsJson">Loading...</code></pre>
         </section>
 

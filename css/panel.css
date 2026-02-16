@@ -338,11 +338,11 @@ body.dark-mode .export-project-btn:hover {
 .content-list-container p i, .content-list-container .error i { color: var(--panel-secondary-text-light); padding: 10px; display: block; }
 .content-list-container .error i { color: #cf222e; font-weight: 500;}
 
-/* --- Status Message --- */
-.status-message { font-size: 0.9em; padding: 8px 12px; text-align: center; border-radius: 5px; border: 1px solid transparent; min-height: 1.5em; display: none; margin-top: 10px; word-wrap: break-word; }
-.status-message.success { background-color: #e6ffed; color: #1f883d; border-color: #95d7a0; display: block; }
-.status-message.error { background-color: #ffeef0; color: #cf222e; border-color: #f7baba; display: block; }
-.status-message.info { background-color: #eef5ff; color: #0969da; border-color: #bcdfff; display: block; }
+/* --- Status Message (fixed bar between header and content) --- */
+.status-message { font-size: 0.85em; padding: 6px 12px; text-align: center; border: none; border-bottom: 1px solid transparent; display: none; word-wrap: break-word; flex-shrink: 0; z-index: 10; }
+.status-message.success { background-color: #e6ffed; color: #1f883d; border-bottom-color: #95d7a0; display: block; }
+.status-message.error { background-color: #ffeef0; color: #cf222e; border-bottom-color: #f7baba; display: block; }
+.status-message.info { background-color: #eef5ff; color: #0969da; border-bottom-color: #bcdfff; display: block; }
 
 /* --- Footer --- */
 .panel-footer { padding: 10px 15px; border-top: 1px solid var(--panel-border-light); flex-shrink: 0; text-align: right; }
@@ -361,6 +361,21 @@ body.dark-mode .export-project-btn:hover {
 
 /* --- Screenshot Full View Styling --- */
 .screenshot-full { max-width: 100%; height: auto; border-radius: 4px; border: 1px solid var(--panel-border-light); margin: 5px 0; }
+
+.open-in-new-tab-btn {
+    display: block;
+    margin: 10px auto;
+    padding: 8px 12px;
+    background-color: #007bff;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+}
+
+.open-in-new-tab-btn:hover {
+    background-color: #0056b3;
+}
 
 /* --- Content Full Text Styling --- */
 .content-full, .content-preview { white-space: pre-wrap; word-wrap: break-word; background-color: var(--panel-hover-bg-light); padding: 8px; border-radius: 4px; font-size: 0.9em; max-height: 300px; overflow-y: auto; border: 1px solid var(--panel-border-light); }
@@ -468,7 +483,7 @@ body.dark-mode .panel-header { border-bottom-color: var(--panel-border-dark); } 
 body.dark-mode .panel-content h2 { color: var(--panel-secondary-text-dark); border-bottom-color: var(--panel-border-dark); }
 body.dark-mode .content-list-container { border-color: var(--panel-border-dark); } body.dark-mode .content-list-container p i, body.dark-mode .content-list-container .error i { color: var(--panel-secondary-text-dark); } body.dark-mode .content-list-container .error i { color: #ffa198; }
 body.dark-mode button { background-color: var(--panel-button-bg-dark); color: var(--panel-text-dark); border-color: var(--panel-button-border-dark); } body.dark-mode button:hover { background-color: var(--panel-button-hover-bg-dark); border-color: var(--panel-button-hover-border-dark); } body.dark-mode button:active { background-color: var(--panel-button-active-bg-dark); }
-body.dark-mode .status-message.success { background-color: #1f3d2a; color: #56d364; border-color: #2a5a38; } body.dark-mode .status-message.error { background-color: #442c2e; color: #ffa198; border-color: #72343a; } body.dark-mode .status-message.info { background-color: #20304c; color: #79c0ff; border-color: #2d4a77; }
+body.dark-mode .status-message.success { background-color: #1f3d2a; color: #56d364; border-bottom-color: #2a5a38; } body.dark-mode .status-message.error { background-color: #442c2e; color: #ffa198; border-bottom-color: #72343a; } body.dark-mode .status-message.info { background-color: #20304c; color: #79c0ff; border-bottom-color: #2d4a77; }
 body.dark-mode .panel-footer { border-top-color: var(--panel-border-dark); }
 body.dark-mode .item-summary:hover { background-color: var(--panel-hover-bg-dark); }
 body.dark-mode .content-item { border-bottom-color: var(--panel-border-dark); } body.dark-mode .content-item strong { color: var(--panel-accent-dark); } body.dark-mode .content-item .preview { color: var(--panel-secondary-text-dark); } body.dark-mode .content-item .preview img { border-color: var(--panel-border-dark); } body.dark-mode .content-item span.timestamp { color: #6e7681; } body.dark-mode .analysis-status.success { color: #56d364; } body.dark-mode .analysis-status.error { color: #ffa198; } body.dark-mode .analysis-status.pending { color: #eac54f; } body.dark-mode .analysis-status.generated { color: var(--panel-keypoints-btn-text-dark); } body.dark-mode .content-item .delete-btn { color: #8b949e; } body.dark-mode .content-item .delete-btn:hover { color: #ffa198; background-color: #442c2e; }

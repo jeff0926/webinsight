@@ -5,9 +5,11 @@
 // Refer to the official Google AI documentation: https://ai.google.dev/docs
 const GEMINI_API_ENDPOINT_BASE = `https://generativelanguage.googleapis.com/v1beta/models/`;
 // Model for analyzing images (multimodal)
-const VISION_MODEL = "gemini-1.5-flash-latest";
+// FIX APPLIED: Changed "gemini-1.5-flash-latest" to the current stable model.
+const VISION_MODEL = "gemini-2.5-flash"; 
 // Model for analyzing text (can be Flash or Pro - Pro is better for complex text tasks)
-const TEXT_MODEL = "gemini-1.5-flash-latest"; // Start with Flash, consider Pro later
+// FIX APPLIED: Changed "gemini-1.5-flash-latest" to the current stable model.
+const TEXT_MODEL = "gemini-2.5-flash"; 
 const API_ACTION = ":generateContent";
 
 /**
@@ -40,30 +42,8 @@ async function getApiKey() {
  * @returns {Promise<object>} Promise resolving with the full JSON response object from the API.
  * @throws {Error} Throws an error if the API key is missing, data URL is invalid,
  * or the API request fails.
- * 
- * 
- * 
- * 
- * // api.js
-export async function analyzeImageWithGemini(imageDataUrl, promptText, opts = {}) {
-  const { forceJson = false, schema = null } = opts;
-
-  const requestBody = {
-    contents: [{ parts: [{ text: promptText }, { inline_data: { mime_type: "image/png", data: imageDataUrl.split(",")[1] } }] }],
-    generationConfig: {
-      temperature: 0.2,
-      ...(forceJson ? { responseMimeType: "application/json" } : {}),
-      ...(forceJson && schema ? { responseSchema: schema } : {})
-    }
-  };
-
-  // ... existing fetch logic remains the same
-}
-
  */
-// api.js
-// api.js
-export async function analyzeImageWithGemini(
+async function analyzeImageWithGemini(
   imageDataUrl,
   promptText = "Describe this image in detail.",
   opts = {}
@@ -154,6 +134,7 @@ export async function analyzeImageWithGemini(
         console.error("[API] Gemini API Error Response Text (not JSON):", errorText);
       }
       if (response.status === 404) {
+        // The error message logging is intentionally kept detailed here for debugging
         throw new Error(`API request failed (404 Not Found): Model '${VISION_MODEL}' might be incorrect or unavailable. Check model name and API endpoint. Original message: ${errorMessage}`);
       }
       throw new Error(`API request failed with status ${response.status}: ${errorMessage}`);
@@ -219,10 +200,10 @@ async function analyzeTextWithGemini(
     ],
     // Optional Generation Config (Example - adjust as needed)
     // generationConfig: {
-    //   temperature: 0.7,
-    //   topK: 40,
-    //   topP: 0.95,
-    //   maxOutputTokens: 1024,
+    //    temperature: 0.7,
+    //    topK: 40,
+    //    topP: 0.95,
+    //    maxOutputTokens: 1024,
     // },
     // Optional Safety Settings
     // safetySettings: [ ... ]

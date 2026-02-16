@@ -13,10 +13,20 @@ const importFileInput = document.getElementById('importFileInput');
 
 const aiModeSelect = document.getElementById('aiModeSelect');
 
+// AN-7: New DOM Reference for Navigation Stripping
+const stripNavigationCheckbox = document.getElementById('stripNavigation');
+
+
+// Storage Usage Elements
+const storageUsageFill = document.getElementById('storageUsageFill');
+const storageUsageLabel = document.getElementById('storageUsageLabel');
+const storageUsageDetail = document.getElementById('storageUsageDetail');
+
 // --- Initialization ---
 document.addEventListener('DOMContentLoaded', () => {
     loadSettings();
     addEventListeners();
+    loadStorageUsage();
 });
 
 // --- Event Listener Setup ---
@@ -43,13 +53,18 @@ function addEventListeners() {
  * Loads settings from chrome.storage and populates the form fields.
  */
 function loadSettings() {
-    chrome.storage.local.get(['geminiApiKey', 'aiMode'], (localResult) => {
+    // AN-7: Added 'stripNavigation' to local storage retrieval
+    chrome.storage.local.get(['geminiApiKey', 'aiMode', 'stripNavigation'], (localResult) => {
         if (localResult.geminiApiKey) {
             apiKeyInput.value = localResult.geminiApiKey;
         }
         // NEW: Load AI Mode (default to "ask" if nothing saved yet)
         if (aiModeSelect) {
             aiModeSelect.value = localResult.aiMode || 'ask';
+        }
+        // AN-7: Load new strip navigation preference (default is false)
+        if (stripNavigationCheckbox) {
+            stripNavigationCheckbox.checked = localResult.stripNavigation || false;
         }
     });
 
@@ -69,9 +84,15 @@ function saveSettings() {
 
     const apiKey = apiKeyInput.value.trim();
     const theme = themeSelect.value;
-    const aiMode = aiModeSelect ? aiModeSelect.value : 'ask'; // NEW
+    const aiMode = aiModeSelect ? aiModeSelect.value : 'ask'; 
+    // AN-7: Get the state of the new checkbox
+    const stripNavigation = stripNavigationCheckbox ? stripNavigationCheckbox.checked : false;
 
-    chrome.storage.local.set({ geminiApiKey: apiKey, aiMode }, () => {
+    chrome.storage.local.set({ 
+        geminiApiKey: apiKey, 
+        aiMode,
+        stripNavigation // AN-7: Save new setting
+    }, () => {
         if (chrome.runtime.lastError) {
             showStatus(`Error saving settings: ${chrome.runtime.lastError.message}`, "error");
             return;
@@ -94,23 +115,9 @@ function saveSettings() {
  * Handles the export process.
  */
 function handleExport() {
-    showStatus("Exporting data...", "info", false);
-    chrome.runtime.sendMessage({ type: "EXPORT_FULL_BACKUP" }, (response) => {
+    showStatus("Exporting data... This may take a moment for large databases.", "info", false);
+    chrome.runtime.sendMessage({ type: "EXPORT_FULL_BACKUP_DOWNLOAD" }, (response) => {
         if (response && response.success) {
-            const data = response.payload;
-            const jsonString = JSON.stringify(data, null, 2);
-            const blob = new Blob([jsonString], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-
-            const a = document.createElement('a');
-            a.href = url;
-            const timestamp = new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-');
-            a.download = `webinsight-backup-${timestamp}.json`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-
             showStatus("Export successful! Check your Downloads folder.", "success");
         } else {
             showStatus(`Export failed: ${response?.error || 'Unknown error'}`, "error");
@@ -137,9 +144,9 @@ function handleImport(event) {
                 throw new Error("Invalid backup file format.");
             }
 
+            // IMPORTANT: Use standard window.confirm here
             const confirmation = confirm(
                 "IMPORTANT: Importing this backup will completely overwrite all current WebInsight data.\n\n" +
-                `This file contains:\n` +
                 `- ${data.contentItems.length} saved items\n` +
                 `- ${data.tags.length} unique tags\n\n` +
                 "Are you sure you want to proceed?"
@@ -195,4 +202,40 @@ function showStatus(message, type = "info", autoClear = true) {
             }
         }, 4000);
     }
+}
+
+// --- Storage Usage ---
+
+function formatBytes(bytes) {
+    if (bytes === 0) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(1024));
+    return (bytes / Math.pow(1024, i)).toFixed(1) + ' ' + units[i];
+}
+
+function loadStorageUsage() {
+    chrome.runtime.sendMessage({ type: "GET_STORAGE_ESTIMATE" }, (response) => {
+        if (!storageUsageFill || !storageUsageLabel || !storageUsageDetail) return;
+
+        if (response && response.success) {
+            const { usage, quota } = response.payload;
+            const pct = quota > 0 ? Math.min((usage / quota) * 100, 100) : 0;
+
+            storageUsageFill.style.width = pct.toFixed(1) + '%';
+            storageUsageLabel.textContent = `${formatBytes(usage)} / ${formatBytes(quota)} (${pct.toFixed(1)}%)`;
+            storageUsageDetail.textContent = `Using ${formatBytes(usage)} of ${formatBytes(quota)} available storage.`;
+
+            // Color the bar based on usage
+            if (pct > 90) {
+                storageUsageFill.style.background = '#e74c3c';
+            } else if (pct > 70) {
+                storageUsageFill.style.background = '#f39c12';
+            } else {
+                storageUsageFill.style.background = '#4a90d9';
+            }
+        } else {
+            storageUsageLabel.textContent = 'Unable to estimate';
+            storageUsageDetail.textContent = response?.error || 'Storage estimation not available.';
+        }
+    });
 }

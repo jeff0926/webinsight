@@ -340,45 +340,31 @@ async function getContentItemsByIds(contentIds) {
  */
 async function addTag(tagName) {
     if (!tagName || typeof tagName !== 'string' || tagName.trim().length === 0) return Promise.reject(new Error("Invalid tag name."));
-    const trimmedTagName = tagName.trim();
-    // Normalize tags for canonical storage/lookup (make tags case-insensitive)
-    const normalizedTagName = trimmedTagName.toLowerCase();
-    // TEMP LOG: trace db.addTag invocation (with stack)
-    console.log("db.addTag called with:", { original: trimmedTagName, normalized: normalizedTagName });
-    console.trace("db.addTag trace");
+    const trimmedTagName = tagName.trim().toLowerCase();
     const dbInstance = await initDB();
     return new Promise((resolve, reject) => {
         const transaction = dbInstance.transaction([TAG_STORE_NAME], 'readwrite');
-        transaction.oncomplete = () => { console.log(`addTag transaction complete for: "${trimmedTagName}"`); };
         const store = transaction.objectStore(TAG_STORE_NAME);
         const index = store.index('name');
-        // Look up by the normalized form
-        const getRequest = index.get(normalizedTagName);
+        const getRequest = index.get(trimmedTagName);
+
         getRequest.onsuccess = (event) => {
             const existingTag = event.target.result;
             if (existingTag) {
-                console.log(`Tag "${trimmedTagName}" (normalized: "${normalizedTagName}") exists (ID: ${existingTag.id})`);
                 resolve(existingTag.id);
             } else {
-                console.log(`Adding new tag: "${trimmedTagName}" (normalized: "${normalizedTagName}")`);
-                // Store the normalized name as the canonical 'name' value
-                const addRequest = store.add({ name: normalizedTagName });
+                const addRequest = store.add({ name: trimmedTagName });
                 addRequest.onsuccess = (addEvent) => {
-                    console.log(`Tag "${normalizedTagName}" added (ID: ${addEvent.target.result})`);
                     resolve(addEvent.target.result);
                 };
                 addRequest.onerror = (addEvent) => {
-                    console.error(`Error adding tag "${normalizedTagName}":`, addEvent.target.error);
                     reject(`Error adding tag: ${addEvent.target.error}`);
                 };
             }
         };
         getRequest.onerror = (event) => {
-            console.error(`Error checking tag "${trimmedTagName}":`, event.target.error);
-            if (event.target && event.target.error && event.target.error.stack) console.error(event.target.error.stack);
             reject(`Error checking tag: ${event.target.error}`);
         };
-        transaction.onerror = (event) => { console.error("Add tag transaction error:", event && event.target && event.target.error ? event.target.error : event); if (event && event.target && event.target.error && event.target.error.stack) console.error(event.target.error.stack); };
     });
 }
 
@@ -394,7 +380,6 @@ async function getTagByName(tagName) {
         const transaction = dbInstance.transaction([TAG_STORE_NAME], 'readonly');
         const store = transaction.objectStore(TAG_STORE_NAME);
         const index = store.index('name');
-        // Normalize lookup to match stored canonical form
         const lookupName = tagName.trim().toLowerCase();
         const request = index.get(lookupName);
         request.onsuccess = (event) => resolve(event.target.result || null);
@@ -620,11 +605,125 @@ async function mergeDuplicateTags() {
     }
 }
 
+// --- Paginated Content Methods ---
+
+/**
+ * Returns the total count of content items in the database.
+ * @returns {Promise<number>} The count of items.
+ */
+async function getContentItemCount() {
+    const dbInstance = await initDB();
+    return new Promise((resolve, reject) => {
+        const transaction = dbInstance.transaction([CONTENT_STORE_NAME], 'readonly');
+        const store = transaction.objectStore(CONTENT_STORE_NAME);
+        const request = store.count();
+        request.onsuccess = (event) => resolve(event.target.result);
+        request.onerror = (event) => {
+            console.error("Error counting content items:", event.target.error);
+            reject(`Error counting items: ${event.target.error}`);
+        };
+    });
+}
+
+/**
+ * Retrieves a page of content items using a cursor, ordered by id descending (newest first).
+ * @param {number} offset - Number of items to skip.
+ * @param {number} limit - Maximum number of items to return.
+ * @returns {Promise<Array<object>>} A page of content items.
+ */
+async function getContentItemsPage(offset, limit) {
+    const dbInstance = await initDB();
+    return new Promise((resolve, reject) => {
+        const transaction = dbInstance.transaction([CONTENT_STORE_NAME], 'readonly');
+        const store = transaction.objectStore(CONTENT_STORE_NAME);
+        const items = [];
+        let skipped = 0;
+        const request = store.openCursor(null, 'prev'); // Descending: newest first
+
+        request.onsuccess = (event) => {
+            const cursor = event.target.result;
+            if (!cursor) {
+                resolve(items);
+                return;
+            }
+            if (skipped < offset) {
+                skipped++;
+                cursor.continue();
+                return;
+            }
+            if (items.length < limit) {
+                items.push(cursor.value);
+                cursor.continue();
+            } else {
+                resolve(items);
+            }
+        };
+        request.onerror = (event) => {
+            console.error("Error in getContentItemsPage:", event.target.error);
+            reject(`Error paging items: ${event.target.error}`);
+        };
+    });
+}
+
+/**
+ * Streams all content items in chunks, calling a callback for each chunk.
+ * Useful for operations that need all data but can't fit it in one message.
+ * @param {number} chunkSize - Number of items per chunk.
+ * @param {function(Array<object>, number): Promise<void>} onChunk - Called with (items, chunkIndex).
+ * @returns {Promise<number>} Total number of items streamed.
+ */
+async function streamAllContentItems(chunkSize, onChunk) {
+    const dbInstance = await initDB();
+    return new Promise((resolve, reject) => {
+        const transaction = dbInstance.transaction([CONTENT_STORE_NAME], 'readonly');
+        const store = transaction.objectStore(CONTENT_STORE_NAME);
+        const items = [];
+        let chunkIndex = 0;
+        let total = 0;
+        const request = store.openCursor();
+
+        request.onsuccess = async (event) => {
+            const cursor = event.target.result;
+            if (cursor) {
+                items.push(cursor.value);
+                total++;
+                if (items.length >= chunkSize) {
+                    try {
+                        await onChunk([...items], chunkIndex++);
+                    } catch (e) {
+                        reject(e);
+                        return;
+                    }
+                    items.length = 0;
+                }
+                cursor.continue();
+            } else {
+                // Flush remaining items
+                if (items.length > 0) {
+                    try {
+                        await onChunk([...items], chunkIndex);
+                    } catch (e) {
+                        reject(e);
+                        return;
+                    }
+                }
+                resolve(total);
+            }
+        };
+        request.onerror = (event) => {
+            console.error("Error streaming content items:", event.target.error);
+            reject(`Error streaming items: ${event.target.error}`);
+        };
+    });
+}
+
 // --- Exports ---
 export {
     initDB,
     // Content Item Methods
     addContentItem, getAllContentItems, updateContentItem, deleteContentItem, getContentItemsByIds,
+    // Paginated Content Methods
+    getContentItemCount, getContentItemsPage, streamAllContentItems,
     // Tag Methods
     addTag, getTagByName, getAllTags, deleteTag, getTagsByIds,
     // Linking Methods

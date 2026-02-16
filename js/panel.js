@@ -32,9 +32,16 @@ const saveSettingsBtn = document.getElementById("saveSettingsBtn");
 const someOtherCheckbox = document.getElementById("someOtherCheckbox");
 
 // --- State ---
-let currentFilterTagId = null; // Keep track of the active filter tag ID
-let currentFilterTagName = null; // Keep track of the active filter tag name
+
+    let currentFilterTagIds = []; // Keep track of active filter tag IDs
+    let currentFilterTagNames = []; // Keep track of active filter tag names
+    
 let currentItemsCache = []; // Cache the full list of items
+const ITEMS_PAGE_SIZE = 20; // Number of items to load per page
+let currentPageOffset = 0; // Current pagination offset
+let totalItemCount = 0; // Total items in DB (for unfiltered view)
+let isLoadingMore = false; // Prevent duplicate page loads
+let suppressContentReload = false; // Suppress storage-listener reload during tag operations
 let aiInitialized = false;
 let aiLoading = false;
 let aiMode = "local-first"; // default if not set yet
@@ -176,7 +183,7 @@ function handleAnonymizeContent(itemId, buttonEl, detailElement) {
             const cachedItem = currentItemsCache.find(i => i.id === itemId);
             if (cachedItem) {
                 // Update item content in cache with the new anonymized content
-                cachedItem.content = response.payload.newContent;
+                cachedItem.content = response.anonymizedContent;
                 
                 // Force re-render the detail view to show anonymized content
                 displayItemDetails(cachedItem, detailElement); 
@@ -187,6 +194,35 @@ function handleAnonymizeContent(itemId, buttonEl, detailElement) {
             buttonEl.textContent = 'Error';
             showStatus(`Anonymization failed: ${response?.error || 'Unknown error'}`, "error");
             console.error("Anonymization failed:", response?.error);
+            setTimeout(() => { buttonEl.textContent = originalText; }, 3000);
+        }
+    });
+}
+
+/**
+ * Handles the "Convert to draw.io" button click.
+ * Sends the item to background for rich Gemini extraction + XML generation + download.
+ */
+function handleConvertToDrawio(itemId, buttonEl) {
+    if (!buttonEl) return;
+
+    const originalText = buttonEl.textContent;
+    buttonEl.textContent = 'Converting...';
+    buttonEl.disabled = true;
+
+    chrome.runtime.sendMessage({
+        type: "CONVERT_TO_DRAWIO",
+        payload: { itemId: itemId }
+    }, (response) => {
+        buttonEl.disabled = false;
+        if (response && response.success) {
+            buttonEl.textContent = 'Downloaded!';
+            showStatus(`draw.io file saved: ${response.filename || 'diagram.drawio'}`, "success");
+            setTimeout(() => { buttonEl.textContent = originalText; }, 3000);
+        } else {
+            buttonEl.textContent = 'Error';
+            showStatus(`draw.io conversion failed: ${response?.error || 'Unknown error'}`, "error");
+            console.error("draw.io conversion failed:", response?.error);
             setTimeout(() => { buttonEl.textContent = originalText; }, 3000);
         }
     });
@@ -504,9 +540,17 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
     namespace === "local" &&
     (changes.lastSaveTimestamp || changes.lastAnalysisTimestamp)
   ) {
-    console.log("Detected data change, reloading panel content and filters...");
-    loadFilterTags(); // Reload available tags
-    loadSavedContent(currentFilterTagId); // Reload content
+    if (suppressContentReload) {
+      // Tag add/remove triggered this — only refresh filter tags, keep accordion open
+      console.log("Detected tag change, reloading filters only (accordion preserved).");
+      suppressContentReload = false;
+      loadFilterTags();
+    } else {
+      // New content saved or analysis completed — full reload
+      console.log("Detected data change, reloading panel content and filters...");
+      loadFilterTags();
+      loadSavedContent(currentFilterTagIds.length > 0 ? currentFilterTagIds : null);
+    }
   }
 });
 window
@@ -726,64 +770,161 @@ function handleActionResponse(response) {
  * Fetches and displays saved content items. Can be filtered by tagId.
  * @param {number | null} [filterTagId=null] - Optional ID of the tag to filter by. If null, fetches all items.
  */
-function loadSavedContent(filterTagId = null) {
-  console.log("🔍 loadSavedContent called with filterTagId:", filterTagId);
 
-  currentFilterTagId = filterTagId;
-  if (filterTagId === null) {
-    currentFilterTagName = null;
-  }
+    function loadSavedContent(filterTagIdsParam = null) {
+      // Ensure filterTagIdsParam is an array or null
+      const effectiveFilterTagIds = Array.isArray(filterTagIdsParam) ? filterTagIdsParam : (filterTagIdsParam !== null ? [filterTagIdsParam] : []);
 
-  if (!panelContentListEl) {
-    console.error(
-      "DEBUG ERROR: Panel content list element not found in loadSavedContent."
-    );
-    return;
-  }
+      console.log("🔍 loadSavedContent called with filterTagIds:", effectiveFilterTagIds);
 
-  panelContentListEl.innerHTML = "<p><i>Loading items...</i></p>";
-  if (
-    panelStatusMessageEl &&
-    panelStatusMessageEl.textContent.includes("Loading")
-  )
-    clearStatus();
-  hideKeyPointsResultArea();
-
-  const messageType =
-    filterTagId !== null
-      ? "GET_FILTERED_ITEMS_BY_TAG"
-      : "GET_ALL_SAVED_CONTENT";
-  const payload = filterTagId !== null ? { tagId: filterTagId } : {};
-
-  console.log(`🔍 Sending message: ${messageType}`, payload);
-
-  chrome.runtime.sendMessage(
-    { type: messageType, payload: payload },
-    (response) => {
-      console.log(
-        "🔍 Response received from background for loadSavedContent:",
-        response
-      );
-
-      if (response && response.success && Array.isArray(response.payload)) {
-        currentItemsCache = response.payload || [];
-        window.currentItemsCache = currentItemsCache; // For external debugging
-        displayContentItems(currentItemsCache);
-      } else {
-        currentItemsCache = [];
-        window.currentItemsCache = currentItemsCache;
-        const errorMsg =
-          response?.error ||
-          `Failed to load ${filterTagId !== null ? "filtered " : ""}items.`;
-        console.error("Panel: Failed to load content:", errorMsg);
-        panelContentListEl.innerHTML = `<p class="error"><i>Error loading items: ${errorMsg}</i></p>`;
-        showStatus(`Error loading items: ${errorMsg}`, "error", false);
+      currentFilterTagIds = effectiveFilterTagIds;
+      // Update currentFilterTagNames based on currentFilterTagIds, assuming tags are loaded
+      currentFilterTagNames = Array.from(tagFilterListEl.querySelectorAll('.tag-filter-item.active')).map(el => el.dataset.tagName);
+      if (currentFilterTagIds.length === 0) {
+        currentFilterTagNames = [];
       }
 
-      updateKeyPointsButtonVisibility();
+      if (!panelContentListEl) {
+        console.error(
+          "DEBUG ERROR: Panel content list element not found in loadSavedContent."
+        );
+        return;
+      }
+
+      panelContentListEl.innerHTML = "<p><i>Loading items...</i></p>";
+      if (
+        panelStatusMessageEl &&
+        panelStatusMessageEl.textContent.includes("Loading")
+      )
+        clearStatus();
+      hideKeyPointsResultArea();
+
+      // Reset pagination state
+      currentItemsCache = [];
+      window.currentItemsCache = currentItemsCache;
+      currentPageOffset = 0;
+      totalItemCount = 0;
+      isLoadingMore = false;
+
+      if (currentFilterTagIds.length > 0) {
+        // Filtered path — use existing message (filtered results are typically small)
+        console.log("🔍 Sending message: GET_FILTERED_ITEMS_BY_TAGS_OR", { tagIds: currentFilterTagIds });
+        chrome.runtime.sendMessage(
+          { type: "GET_FILTERED_ITEMS_BY_TAGS_OR", payload: { tagIds: currentFilterTagIds } },
+          (response) => {
+            if (response && response.success && Array.isArray(response.payload)) {
+              currentItemsCache = response.payload || [];
+              window.currentItemsCache = currentItemsCache;
+              displayContentItems(currentItemsCache);
+            } else {
+              currentItemsCache = [];
+              window.currentItemsCache = currentItemsCache;
+              const errorMsg = response?.error || "Failed to load filtered items.";
+              console.error("Panel: Failed to load filtered content:", errorMsg);
+              panelContentListEl.innerHTML = `<p class="error"><i>Error loading items: ${errorMsg}</i></p>`;
+              showStatus(`Error loading items: ${errorMsg}`, "error", false);
+            }
+            updateKeyPointsButtonVisibility();
+          }
+        );
+      } else {
+        // Unfiltered path — use paginated loading
+        console.log("🔍 Starting paginated load (page size:", ITEMS_PAGE_SIZE, ")");
+        // First get total count, then load first page
+        chrome.runtime.sendMessage(
+          { type: "GET_CONTENT_ITEMS_COUNT" },
+          (countResponse) => {
+            if (countResponse && countResponse.success) {
+              totalItemCount = countResponse.payload || 0;
+              console.log(`🔍 Total items in DB: ${totalItemCount}`);
+              if (totalItemCount === 0) {
+                panelContentListEl.innerHTML = "<p><i>No items saved yet.</i></p>";
+                updateKeyPointsButtonVisibility();
+                return;
+              }
+              // Load first page
+              loadNextPage(true);
+            } else {
+              const errorMsg = countResponse?.error || "Failed to count items.";
+              console.error("Panel: Failed to count items:", errorMsg);
+              panelContentListEl.innerHTML = `<p class="error"><i>Error: ${errorMsg}</i></p>`;
+              showStatus(`Error: ${errorMsg}`, "error", false);
+              updateKeyPointsButtonVisibility();
+            }
+          }
+        );
+      }
     }
-  );
-}
+
+    /**
+     * Loads the next page of content items and appends them to the list.
+     * @param {boolean} isFirstPage - If true, clears the list before appending.
+     */
+    function loadNextPage(isFirstPage = false) {
+      if (isLoadingMore) return;
+      isLoadingMore = true;
+
+      console.log(`🔍 Loading page at offset ${currentPageOffset}, limit ${ITEMS_PAGE_SIZE}`);
+
+      chrome.runtime.sendMessage(
+        { type: "GET_CONTENT_ITEMS_PAGE", payload: { offset: currentPageOffset, limit: ITEMS_PAGE_SIZE } },
+        (response) => {
+          isLoadingMore = false;
+
+          if (response && response.success && Array.isArray(response.payload)) {
+            const newItems = response.payload;
+            currentItemsCache = currentItemsCache.concat(newItems);
+            window.currentItemsCache = currentItemsCache;
+            currentPageOffset += newItems.length;
+
+            if (isFirstPage) {
+              panelContentListEl.innerHTML = "";
+            }
+
+            // Remove existing "Load More" button if present
+            const existingLoadMoreBtn = panelContentListEl.querySelector(".load-more-btn");
+            if (existingLoadMoreBtn) existingLoadMoreBtn.remove();
+
+            // Append items (DB returns newest-first, no client sort needed)
+            newItems.forEach((item) => {
+              try {
+                panelContentListEl.appendChild(createContentItemElement(item));
+              } catch (error) {
+                console.error(`Error creating element for item ${item.id}:`, error);
+                const errorDiv = document.createElement("div");
+                errorDiv.className = "content-item error";
+                errorDiv.textContent = `Error loading item ${item.id}.`;
+                panelContentListEl.appendChild(errorDiv);
+              }
+            });
+
+            // Add "Load More" button if there are more items
+            if (currentPageOffset < totalItemCount) {
+              const loadMoreBtn = document.createElement("button");
+              loadMoreBtn.className = "load-more-btn";
+              loadMoreBtn.textContent = `Load More (${currentPageOffset} of ${totalItemCount} items loaded)`;
+              loadMoreBtn.style.cssText = "width:100%;padding:10px;margin-top:8px;cursor:pointer;border:1px solid #ccc;border-radius:6px;background:#f5f5f5;font-size:13px;";
+              loadMoreBtn.addEventListener("click", () => loadNextPage(false));
+              panelContentListEl.appendChild(loadMoreBtn);
+            }
+
+            if (isFirstPage) {
+              showStatus(`Loaded ${newItems.length} of ${totalItemCount} items.`, "info");
+            }
+          } else {
+            const errorMsg = response?.error || "Failed to load items page.";
+            console.error("Panel: Failed to load page:", errorMsg);
+            if (isFirstPage) {
+              panelContentListEl.innerHTML = `<p class="error"><i>Error loading items: ${errorMsg}</i></p>`;
+            }
+            showStatus(`Error loading items: ${errorMsg}`, "error", false);
+          }
+
+          updateKeyPointsButtonVisibility();
+        }
+      );
+    }
+    
 /**
  * Renders an array of content items into the list element.
  * @param {Array<object>} items - Array of content item objects.
@@ -799,7 +940,7 @@ function displayContentItems(items) {
 
   if (items.length === 0) {
     const message =
-      currentFilterTagId !== null
+      currentFilterTagIds.length > 0
         ? "No items match the selected filter."
         : "No items saved yet.";
     panelContentListEl.innerHTML = `<p><i>${message}</i></p>`;
@@ -1041,9 +1182,10 @@ function displayItemDetails(item, detailElement) {
 
     case "screenshot": {
       const src = item.content || "";
-      contentHtml = `<img src="${escAttr(
-        src
-      )}" alt="Full screenshot" class="screenshot-full">`;
+      contentHtml = `
+        <img src="${escAttr(src)}" alt="Full screenshot" class="screenshot-full">
+        <button class="open-in-new-tab-btn" data-url="${escAttr(item.url)}">Open image in new tab</button>
+      `;
       metadataHtml = `<p><small>URL: <a href="${escAttr(
         item.url
       )}" target="_blank" rel="noopener noreferrer">${esc(
@@ -1071,6 +1213,12 @@ function displayItemDetails(item, detailElement) {
               JSON.stringify(item.analysis, null, 2)
             )}</code></pre>
           </details>`;
+      }
+
+      // Convert to draw.io button — only when a diagram was detected
+      if (item.analysis?.diagramData) {
+        analysisHtml += `
+          <button id="convertDrawioBtn_${item.id}" class="add-tag-btn" style="margin-top:8px;padding:5px 12px;font-size:0.85em;">Convert to draw.io</button>`;
       }
       break;
     }
@@ -1152,6 +1300,37 @@ function displayItemDetails(item, detailElement) {
             e.stopPropagation(); // Prevent the click from toggling the <details> element
             // Use textContent to get the raw JSON string from the <pre>
             copyTextToClipboard(jsonContentEl.textContent, copyJsonBtn);
+        });
+    }
+
+    // --- Convert to draw.io Event Listener ---
+    const convertDrawioBtn = detailElement.querySelector(`#convertDrawioBtn_${item.id}`);
+    if (convertDrawioBtn) {
+        convertDrawioBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            handleConvertToDrawio(item.id, convertDrawioBtn);
+        });
+    }
+
+  const screenshotFull = detailElement.querySelector('.screenshot-full');
+    if (screenshotFull) {
+        screenshotFull.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (lightbox && lightboxImg) {
+                lightbox.style.display = "block";
+                lightboxImg.src = e.target.src;
+            }
+        });
+    }
+
+  const openInNewTabBtn = detailElement.querySelector('.open-in-new-tab-btn');
+    if (openInNewTabBtn) {
+        openInNewTabBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const url = openInNewTabBtn.dataset.url;
+            if (url) {
+                window.open(url, '_blank');
+            }
         });
     }
 
@@ -1254,6 +1433,7 @@ function fetchAndDisplayTags(contentId, tagsListElement) {
               );
               if (!isNaN(tagIdToRemove) && !isNaN(contentIdToRemoveFrom)) {
                 showStatus(`Removing tag "${tag.name}"...`, "info", false);
+                suppressContentReload = true; // Prevent accordion collapse from storage listener
                 chrome.runtime.sendMessage(
                   {
                     type: "REMOVE_TAG_FROM_ITEM",
@@ -1297,23 +1477,13 @@ function fetchAndDisplayTags(contentId, tagsListElement) {
 /** Handles responses from tag add/remove actions. Refreshes tags for the specific item. */
 function handleTagActionResponse(response, contentId, tagsListElement) {
   if (response && response.success) {
-    // SHORT-LIVED DEBUG: log the successful response from background for tracing
-    console.log("panel <- ADD_TAG_TO_ITEM response:", response, "at", new Date().toISOString());
     showStatus("Tag action successful!", "success");
     if (tagsListElement && document.body.contains(tagsListElement)) {
       fetchAndDisplayTags(contentId, tagsListElement);
     } else {
-      console.warn(
-        "Tag list element no longer valid, cannot refresh tags.",
-        contentId
-      );
       loadFilterTags();
     }
-    loadFilterTags();
   } else {
-    // SHORT-LIVED DEBUG: log failure response as well
-    console.log("panel <- ADD_TAG_TO_ITEM response (failure):", response, "at", new Date().toISOString());
-    // AN-10 DEBUG: Use the detailed error message returned from background.js
     const detailedError = response?.error || "Unknown error.";
     showStatus(
       `Tag action failed: ${detailedError}`,
@@ -1401,7 +1571,7 @@ function loadFilterTags() {
       const tags = response.payload;
       if (tags.length === 0) {
         tagFilterListEl.innerHTML = "<i>No tags available to filter by.</i>";
-        if (clearTagFilterBtn) clearTagFilterBtn.style.display = "none";
+        if (clearTagFilterBtn) { clearTagFilterBtn.style.display = "inline-block"; clearTagFilterBtn.textContent = "All Items"; }
         if (getKeyPointsBtn) getKeyPointsBtn.style.display = "none";
       } else {
         tags.sort((a, b) => a.name.localeCompare(b.name));
@@ -1412,15 +1582,16 @@ function loadFilterTags() {
           tagButton.dataset.tagId = tag.id;
           tagButton.dataset.tagName = tag.name;
           tagButton.title = `Filter by tag: ${tag.name}`;
-          if (currentFilterTagId === tag.id) {
+          if (currentFilterTagIds.includes(tag.id)) {
             tagButton.classList.add("active");
           }
           tagButton.addEventListener("click", handleFilterTagClick);
           tagFilterListEl.appendChild(tagButton);
         });
-        if (clearTagFilterBtn)
-          clearTagFilterBtn.style.display =
-            currentFilterTagId !== null ? "inline-block" : "none";
+        if (clearTagFilterBtn) {
+          clearTagFilterBtn.style.display = "inline-block";
+          clearTagFilterBtn.textContent = currentFilterTagIds.length > 0 ? "View All Items" : "All Items";
+        }
         updateKeyPointsButtonVisibility();
       }
     } else {
@@ -1432,60 +1603,77 @@ function loadFilterTags() {
 }
 
 /** Handles clicks on a tag in the filter list */
-function handleFilterTagClick(event) {
-  const clickedTagButton = event.target;
-  const tagId = parseInt(clickedTagButton.dataset.tagId);
-  const tagName = clickedTagButton.dataset.tagName;
 
-  if (isNaN(tagId)) {
-    console.error(
-      "Invalid tag ID on filter button:",
-      clickedTagButton.dataset.tagId
-    );
-    return;
-  }
+    function handleFilterTagClick(event) {
+      const clickedTagButton = event.target;
+      const tagId = parseInt(clickedTagButton.dataset.tagId);
+      const tagName = clickedTagButton.dataset.tagName;
 
-  if (clickedTagButton.classList.contains("active")) {
-    handleClearFilter();
-    return;
-  }
+      if (isNaN(tagId)) {
+        console.error("Invalid tag ID on filter button:", clickedTagButton.dataset.tagId);
+        return;
+      }
 
-  currentFilterTagName = tagName;
+      // Check if the tag is currently active
+      const isActive = currentFilterTagIds.includes(tagId);
 
-  const currentActive = tagFilterListEl.querySelector(
-    ".tag-filter-item.active"
-  );
-  if (currentActive) currentActive.classList.remove("active");
-  clickedTagButton.classList.add("active");
-  if (clearTagFilterBtn) clearTagFilterBtn.style.display = "inline-block";
+      let newFilterTagIds;
+      let newFilterTagNames;
 
-  loadSavedContent(tagId);
-}
+      if (isActive) {
+        // If active, remove it from the filter
+        newFilterTagIds = currentFilterTagIds.filter((id) => id !== tagId);
+        newFilterTagNames = currentFilterTagNames.filter((name) => name !== tagName);
+      } else {
+        // If inactive, add it to the filter
+        newFilterTagIds = [...currentFilterTagIds, tagId];
+        newFilterTagNames = [...currentFilterTagNames, tagName];
+      }
 
-/** Handles click on the "Clear Filter" button */
-function handleClearFilter() {
-  if (currentFilterTagId === null) return;
+      // Update the global state
+      currentFilterTagIds = newFilterTagIds;
+      currentFilterTagNames = newFilterTagNames;
 
-  currentFilterTagName = null;
-  currentFilterTagId = null;
+      // Toggle the 'active' class immediately for visual feedback
+      clickedTagButton.classList.toggle("active", !isActive);
 
-  const currentActive = tagFilterListEl.querySelector(
-    ".tag-filter-item.active"
-  );
-  if (currentActive) currentActive.classList.remove("active");
-  if (clearTagFilterBtn) clearTagFilterBtn.style.display = "none";
+      // Update the label of the 'View All' button
+      if (clearTagFilterBtn) {
+        clearTagFilterBtn.style.display = "inline-block";
+        clearTagFilterBtn.textContent = currentFilterTagIds.length > 0 ? "View All Items" : "All Items";
+      }
 
-  loadSavedContent(null);
-}
+      // Reload content with the new set of filter tags
+      loadSavedContent(currentFilterTagIds);
+    }
+
+    /** Handles click on the "Clear Filter" / "View All Items" button */
+    function handleClearFilter() {
+
+      currentFilterTagIds = [];
+      currentFilterTagNames = [];
+
+      // Remove 'active' class from all filter tags
+      tagFilterListEl.querySelectorAll(".tag-filter-item.active").forEach((el) => {
+        el.classList.remove("active");
+      });
+
+      if (clearTagFilterBtn) {
+        clearTagFilterBtn.textContent = "All Items";
+      }
+
+      loadSavedContent(null); // Load all content (no filter)
+    }
+    
 
 // --- Key Points Logic ---
 
 /** Handles click on the "Get Key Points" button */
 function handleGetKeyPointsClick() {
-  if (currentFilterTagId === null || !getKeyPointsBtn) return;
+  if (currentFilterTagIds.length === 0 || !getKeyPointsBtn) return;
 
   showStatus(
-    `Generating key points for tag "${currentFilterTagName || "selected"}"...`,
+    `Generating key points for tag "${currentFilterTagNames.join(', ')}" ...`,
     "info",
     false
   );
@@ -1495,19 +1683,29 @@ function handleGetKeyPointsClick() {
   getKeyPointsBtn.textContent = "Generating...";
 
   chrome.runtime.sendMessage(
-    { type: "GET_KEY_POINTS_FOR_TAG", payload: { tagId: currentFilterTagId } },
+    { type: "GET_KEY_POINTS_FOR_TAG", payload: { tagId: currentFilterTagIds[0] } },
     handleKeyPointsResponse
   );
 }
 
 /** Handles click on the "Generate Report" button */
 async function handleGenerateReportClick() {
-  if (currentFilterTagId === null || !generateReportBtn) return;
+  if (currentFilterTagIds.length === 0 || !generateReportBtn) return;
+
+  // Warn if many tags selected (large reports can be very slow)
+  if (currentFilterTagIds.length > 3) {
+    const proceed = confirm(
+      `You have ${currentFilterTagIds.length} tags selected (${currentItemsCache.length} items).\n\n` +
+      `Large reports with many screenshots can take several minutes to render.\n` +
+      `For best results, select 1-3 tags at a time.\n\nProceed anyway?`
+    );
+    if (!proceed) return;
+  }
 
   // AN-9: Set initial UI status when clicking the button
   showStatus(
-    `Starting PDF report generation for tag "${
-      currentFilterTagName || "selected"
+    `Starting PDF report generation for ${currentFilterTagIds.length} tag(s): "${
+      currentFilterTagNames.join(', ') || "selected"
     }"...`,
     "info",
     false
@@ -1520,7 +1718,7 @@ async function handleGenerateReportClick() {
   chrome.runtime.sendMessage(
     {
       type: "GENERATE_PDF_REPORT_FOR_TAG",
-      payload: { tagId: currentFilterTagId },
+      payload: { tagIds: currentFilterTagIds },
     },
     handleGenerateReportResponse
   );
@@ -1530,7 +1728,7 @@ async function handleGenerateReportClick() {
 function handleGenerateReportResponse(response) {
   if (generateReportBtn) {
     generateReportBtn.disabled = false;
-    updateGenerateReportButtonVisibility();
+    updateKeyPointsButtonVisibility();
     generateReportBtn.textContent = "Generate Report"; // Reset text
   }
 
@@ -1597,65 +1795,60 @@ function hideKeyPointsResultArea() {
 }
 
 /** Updates the visibility and text of tag-related action buttons based on filter state */
-function updateKeyPointsButtonVisibility() {
-  const hasTag = currentFilterTagId !== null;
 
-  // Key Points button
-  if (getKeyPointsBtn) {
-    if (hasTag) {
-      getKeyPointsBtn.textContent = `Get Key Points for "${
-        currentFilterTagName || "Selected"
-      }"`;
-      getKeyPointsBtn.style.display = "inline-block";
-      getKeyPointsBtn.disabled = false;
-    } else {
-      getKeyPointsBtn.style.display = "none";
+    function updateKeyPointsButtonVisibility() {
+      const hasTags = currentFilterTagIds.length > 0;
+      const buttonText = hasTags
+        ? `Get Key Points for "${currentFilterTagNames.join(", ")}"`
+        : "Get Key Points";
+
+      if (getKeyPointsBtn) {
+        getKeyPointsBtn.textContent = buttonText;
+        getKeyPointsBtn.style.display = hasTags ? "inline-block" : "none";
+        getKeyPointsBtn.disabled = !hasTags; // Disable if no tags are selected
+      }
+
+      // Generate Report button (also updated here for consistency)
+      if (generateReportBtn) {
+        generateReportBtn.textContent = hasTags
+          ? `Generate Report for "${currentFilterTagNames.join(", ")}"`
+          : "Generate Report";
+        generateReportBtn.style.display = hasTags ? "inline-block" : "none";
+        generateReportBtn.disabled = !hasTags; // Disable if no tags are selected
+      }
+
+      // Export Project for AI button (also updated here for consistency)
+      if (exportProjectBtn) {
+        exportProjectBtn.textContent = hasTags
+          ? `Export Project for "${currentFilterTagNames.join(", ")}"`
+          : "Export Project for AI";
+        exportProjectBtn.style.display = hasTags ? "inline-block" : "none";
+        exportProjectBtn.disabled = !hasTags; // Disable if no tags are selected
+      }
+
+      // Show All Items (clear filter) button — always visible, label changes
+      if (clearTagFilterBtn) {
+        clearTagFilterBtn.style.display = "inline-block";
+        clearTagFilterBtn.textContent = hasTags ? "View All Items" : "All Items";
+      }
     }
-  }
+    
 
-  // Generate Report button
-  if (generateReportBtn) {
-    generateReportBtn.style.display = hasTag ? "inline-block" : "none";
-  }
 
-  // Export Project for AI button
-  if (exportProjectBtn) {
-    exportProjectBtn.style.display = hasTag ? "inline-block" : "none";
-  }
-
-  // Show All Items (clear filter) button
-  if (clearTagFilterBtn) {
-    clearTagFilterBtn.style.display = hasTag ? "inline-block" : "none";
-  }
-}
-
-/** Updates the visibility and text of the Generate Report button based on filter state */
-function updateGenerateReportButtonVisibility() {
-  if (!generateReportBtn) return;
-  if (currentFilterTagId !== null) {
-    generateReportBtn.textContent = `Generate "${
-      currentFilterTagName || "Selected"
-    }" Report`;
-    generateReportBtn.style.display = "inline-block";
-    generateReportBtn.disabled = false;
-  } else {
-    generateReportBtn.style.display = "none";
-  }
-}
 
 // --- AI Functionality ---
 /** Handles export of all items under the current tag into a JSON file */
 function handleExportProjectClick() {
-  if (currentFilterTagId === null) {
+  if (currentFilterTagIds.length === 0) {
     showStatus("Please select a tag to export a project.", "error");
     return;
   }
 
-  showStatus(`Exporting project "${currentFilterTagName}"...`, "info", false);
+  showStatus(`Exporting project "${currentFilterTagNames.join(', ')}"...`, "info", false);
   exportProjectBtn.disabled = true;
 
   chrome.runtime.sendMessage(
-    { type: "EXPORT_PROJECT_FOR_AI", payload: { tagId: currentFilterTagId } },
+    { type: "EXPORT_PROJECT_FOR_AI", payload: { tagId: currentFilterTagIds[0] } },
     (response) => {
       exportProjectBtn.disabled = false;
 
@@ -1666,10 +1859,10 @@ function handleExportProjectClick() {
         const url = URL.createObjectURL(blob);
 
         const a = document.createElement("a");
-        const sanitizedTagName = (currentFilterTagName || "project")
+        const sanitizedTagName = (currentFilterTagNames.join(', ') || "project")
           .replace(/\s+/g, "-")
           .replace(/[^a-zA-Z0-9-]/g, "");
-        const ts = new Date().toISOString().slice(0, 1, 19).replace(/[T:]/g, "-");
+        const ts = new Date().toISOString().slice(0, 19).replace(/[T:]/g, "-");
         a.download = `${sanitizedTagName}_${ts}.json`;
         a.href = url;
         document.body.appendChild(a);
@@ -1677,7 +1870,7 @@ function handleExportProjectClick() {
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
 
-        showStatus(`Project "${currentFilterTagName}" exported.`, "success");
+        showStatus(`Project "${currentFilterTagNames.join(', ')}" exported.`, "success");
       } else {
         showStatus(
           `Project export failed: ${response?.error || "Unknown error"}`,
@@ -1880,8 +2073,9 @@ async function enhancedAddTag(
   }
 
   if (userInput && userInput.trim()) {
-    const normalizedTag = userInput.trim();
+    const normalizedTag = userInput;
     showStatus(`Adding tag "${normalizedTag}"...`, "info", false);
+    suppressContentReload = true; // Prevent accordion collapse from storage listener
 
     // TEMP LOG: trace outgoing add-tag message from panel
     console.log("panel -> ADD_TAG_TO_ITEM", { contentId: contentId, tagName: normalizedTag });
@@ -1962,6 +2156,7 @@ async function showTagSuggestions(
             const targetContentId = parseInt(btn.dataset.contentId);
 
             showStatus(`Adding suggested tag "${tagName}"...`, "info", false);
+            suppressContentReload = true; // Prevent accordion collapse from storage listener
             // TEMP LOG: trace outgoing add-tag message from suggestion click
             console.log("panel -> ADD_TAG_TO_ITEM (suggestion)", { contentId: targetContentId, tagName: tagName });
             chrome.runtime.sendMessage(
