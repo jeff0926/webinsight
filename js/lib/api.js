@@ -265,5 +265,17 @@ async function analyzeTextWithGemini(
   }
 }
 
+// --- Hyperspace re-exports ---
+export { analyzeImageWithHyperspace, analyzeTextWithHyperspace, isHyperspaceConfigured, testHyperspaceConnection } from './hyperspace-api.js';
+
+/**
+ * Returns the currently configured AI provider.
+ * @returns {Promise<'gemini'|'hyperspace'>}
+ */
+async function getAIProvider() {
+  const result = await chrome.storage.local.get(['aiProvider']);
+  return result.aiProvider || 'gemini';
+}
+
 // --- Exports ---
-export { analyzeImageWithGemini, analyzeTextWithGemini, getApiKey }; // Export the new function
+export { analyzeImageWithGemini, analyzeTextWithGemini, getApiKey, getAIProvider };

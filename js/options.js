@@ -1,4 +1,5 @@
-// js/options.js - Logic for the settings page with backup functionality
+// js/options.js - Logic for the settings page
+import { clearAllData, bulkImportData } from './lib/db.js';
 
 // --- DOM Element References ---
 const apiKeyInput = document.getElementById('apiKey');
@@ -6,21 +7,23 @@ const themeSelect = document.getElementById('themeSelect');
 const saveSettingsBtn = document.getElementById('saveSettingsBtn');
 const statusMessageEl = document.getElementById('statusMessage');
 
-// New Backup/Restore Elements
 const exportBackupBtn = document.getElementById('exportBackupBtn');
 const importBackupBtn = document.getElementById('importBackupBtn');
 const importFileInput = document.getElementById('importFileInput');
 
-const aiModeSelect = document.getElementById('aiModeSelect');
-
-// AN-7: New DOM Reference for Navigation Stripping
 const stripNavigationCheckbox = document.getElementById('stripNavigation');
 
-
-// Storage Usage Elements
 const storageUsageFill = document.getElementById('storageUsageFill');
 const storageUsageLabel = document.getElementById('storageUsageLabel');
 const storageUsageDetail = document.getElementById('storageUsageDetail');
+
+const aiProviderSelect = document.getElementById('aiProviderSelect');
+
+const hyperspaceSection = document.getElementById('hyperspaceSection');
+const hyperspaceTokenInput = document.getElementById('hyperspaceToken');
+const hyperspaceBaseUrlInput = document.getElementById('hyperspaceBaseUrl');
+const testHyperspaceBtn = document.getElementById('testHyperspaceBtn');
+const hyperspaceTestStatus = document.getElementById('hyperspaceTestStatus');
 
 // --- Initialization ---
 document.addEventListener('DOMContentLoaded', () => {
@@ -31,43 +34,55 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // --- Event Listener Setup ---
 function addEventListeners() {
-    // Save settings
     saveSettingsBtn.addEventListener('click', saveSettings);
 
-    // Backup and Restore
     exportBackupBtn.addEventListener('click', handleExport);
-    importBackupBtn.addEventListener('click', () => importFileInput.click()); // Open file picker
+    importBackupBtn.addEventListener('click', () => importFileInput.click());
     importFileInput.addEventListener('change', handleImport);
 
-    // Theme changes
     window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
-        if (themeSelect.value === 'system') {
-            applyTheme('system');
-        }
+        if (themeSelect.value === 'system') applyTheme('system');
     });
+
+    if (aiProviderSelect) {
+        aiProviderSelect.addEventListener('change', () => {
+            toggleHyperspaceSection(aiProviderSelect.value === 'hyperspace');
+        });
+    }
+
+    if (testHyperspaceBtn) {
+        testHyperspaceBtn.addEventListener('click', handleTestHyperspaceConnection);
+    }
+}
+
+function toggleHyperspaceSection(show) {
+    if (hyperspaceSection) {
+        hyperspaceSection.style.display = show ? '' : 'none';
+    }
 }
 
 // --- Core Functions ---
 
-/**
- * Loads settings from chrome.storage and populates the form fields.
- */
 function loadSettings() {
-    // AN-7: Added 'stripNavigation' to local storage retrieval
-    chrome.storage.local.get(['geminiApiKey', 'aiMode', 'stripNavigation'], (localResult) => {
+    chrome.storage.local.get([
+        'geminiApiKey', 'stripNavigation',
+        'aiProvider',
+        'hyperspaceToken', 'hyperspaceBaseUrl',
+    ], (localResult) => {
         if (localResult.geminiApiKey) {
             apiKeyInput.value = localResult.geminiApiKey;
         }
-        // NEW: Load AI Mode (default to "ask" if nothing saved yet)
-        if (aiModeSelect) {
-            aiModeSelect.value = localResult.aiMode || 'ask';
-        }
-        // AN-7: Load new strip navigation preference (default is false)
         if (stripNavigationCheckbox) {
             stripNavigationCheckbox.checked = localResult.stripNavigation || false;
         }
-    });
 
+        const provider = localResult.aiProvider || 'gemini';
+        if (aiProviderSelect) aiProviderSelect.value = provider;
+        toggleHyperspaceSection(provider === 'hyperspace');
+
+        if (hyperspaceTokenInput)   hyperspaceTokenInput.value   = localResult.hyperspaceToken   || '6cb1e31b-b128-4816-818d-e67db4fc5194';
+        if (hyperspaceBaseUrlInput) hyperspaceBaseUrlInput.value = localResult.hyperspaceBaseUrl || 'http://localhost:6655/anthropic';
+    });
 
     chrome.storage.sync.get(['theme'], (syncResult) => {
         const loadedTheme = syncResult.theme || 'system';
@@ -76,28 +91,26 @@ function loadSettings() {
     });
 }
 
-/**
- * Saves the current form values to chrome.storage.
- */
 function saveSettings() {
     showStatus("Saving...", "info", false);
 
     const apiKey = apiKeyInput.value.trim();
     const theme = themeSelect.value;
-    const aiMode = aiModeSelect ? aiModeSelect.value : 'ask'; 
-    // AN-7: Get the state of the new checkbox
     const stripNavigation = stripNavigationCheckbox ? stripNavigationCheckbox.checked : false;
+    const aiProvider = aiProviderSelect ? aiProviderSelect.value : 'gemini';
 
-    chrome.storage.local.set({ 
-        geminiApiKey: apiKey, 
-        aiMode,
-        stripNavigation // AN-7: Save new setting
+    chrome.storage.local.set({
+        geminiApiKey: apiKey,
+        stripNavigation,
+        aiProvider,
+        hyperspaceToken:   hyperspaceTokenInput?.value?.trim()   || '',
+        hyperspaceBaseUrl: hyperspaceBaseUrlInput?.value?.trim() || 'http://localhost:6655/anthropic',
     }, () => {
         if (chrome.runtime.lastError) {
             showStatus(`Error saving settings: ${chrome.runtime.lastError.message}`, "error");
             return;
         }
-        chrome.storage.sync.set({ theme: theme }, () => {
+        chrome.storage.sync.set({ theme }, () => {
             if (chrome.runtime.lastError) {
                 showStatus(`Saved, but theme failed: ${chrome.runtime.lastError.message}`, "error");
                 return;
@@ -108,12 +121,34 @@ function saveSettings() {
     });
 }
 
+function handleTestHyperspaceConnection() {
+    if (!hyperspaceTestStatus) return;
 
-// --- Backup and Restore Functions ---
+    const tempData = {
+        hyperspaceToken:   hyperspaceTokenInput?.value?.trim()   || '',
+        hyperspaceBaseUrl: hyperspaceBaseUrlInput?.value?.trim() || 'http://localhost:6655/anthropic',
+    };
 
-/**
- * Handles the export process.
- */
+    hyperspaceTestStatus.textContent = 'Testing…';
+    hyperspaceTestStatus.className = 'btp-test-status testing';
+    testHyperspaceBtn.disabled = true;
+
+    chrome.storage.local.set(tempData, () => {
+        chrome.runtime.sendMessage({ type: 'TEST_HYPERSPACE_CONNECTION' }, (response) => {
+            testHyperspaceBtn.disabled = false;
+            if (response && response.success) {
+                hyperspaceTestStatus.textContent = '✓ ' + (response.message || 'Connection successful!');
+                hyperspaceTestStatus.className = 'btp-test-status success';
+            } else {
+                hyperspaceTestStatus.textContent = '✗ ' + (response?.message || 'Connection failed. Is Hyperspace running?');
+                hyperspaceTestStatus.className = 'btp-test-status error';
+            }
+        });
+    });
+}
+
+// --- Backup and Restore ---
+
 function handleExport() {
     showStatus("Exporting data... This may take a moment for large databases.", "info", false);
     chrome.runtime.sendMessage({ type: "EXPORT_FULL_BACKUP_DOWNLOAD" }, (response) => {
@@ -125,76 +160,54 @@ function handleExport() {
     });
 }
 
-/**
- * Handles the import process once a file is selected.
- */
 function handleImport(event) {
     const file = event.target.files[0];
-    if (!file) {
-        return;
-    }
+    if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
         try {
             const data = JSON.parse(e.target.result);
-
-            // Basic validation
             if (!data.contentItems || !data.tags || !data.contentTags) {
                 throw new Error("Invalid backup file format.");
             }
-
-            // IMPORTANT: Use standard window.confirm here
             const confirmation = confirm(
                 "IMPORTANT: Importing this backup will completely overwrite all current WebInsight data.\n\n" +
                 `- ${data.contentItems.length} saved items\n` +
                 `- ${data.tags.length} unique tags\n\n` +
                 "Are you sure you want to proceed?"
             );
-
-            if (confirmation) {
-                showStatus("Importing data... Please wait.", "info", false);
-                chrome.runtime.sendMessage({ type: "IMPORT_FULL_BACKUP", payload: data }, (response) => {
-                    if (response && response.success) {
-                        showStatus("Import successful! Your data has been restored.", "success");
-                    } else {
-                        showStatus(`Import failed: ${response?.error || 'Unknown error'}`, "error");
-                    }
-                });
-            } else {
+            if (!confirmation) {
                 showStatus("Import cancelled.", "info");
+                return;
             }
-
+            showStatus("Importing data... Please wait.", "info", false);
+            await clearAllData();
+            await bulkImportData(data);
+            // Notify background to refresh panel UI
+            chrome.storage.local.set({ lastSaveTimestamp: Date.now() });
+            showStatus("Import successful! Your data has been restored.", "success");
         } catch (error) {
             showStatus(`Error reading file: ${error.message}`, "error");
         } finally {
-            // Reset file input to allow re-selection of the same file
             importFileInput.value = "";
         }
     };
     reader.readAsText(file);
 }
 
-// --- UI Helper Functions ---
+// --- UI Helpers ---
 
-/**
- * Applies the selected theme to the options page.
- */
 function applyTheme(theme) {
-    const body = document.body;
     const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
     const useDarkMode = theme === 'dark' || (theme === 'system' && prefersDark);
-    body.classList.toggle('dark-mode', useDarkMode);
+    document.body.classList.toggle('dark-mode', useDarkMode);
 }
 
-/**
- * Displays a status message to the user.
- */
 function showStatus(message, type = "info", autoClear = true) {
     statusMessageEl.textContent = message;
     statusMessageEl.className = `status ${type}`;
     statusMessageEl.style.display = 'block';
-
     if (autoClear) {
         setTimeout(() => {
             if (statusMessageEl.textContent === message) {
@@ -216,16 +229,12 @@ function formatBytes(bytes) {
 function loadStorageUsage() {
     chrome.runtime.sendMessage({ type: "GET_STORAGE_ESTIMATE" }, (response) => {
         if (!storageUsageFill || !storageUsageLabel || !storageUsageDetail) return;
-
         if (response && response.success) {
             const { usage, quota } = response.payload;
             const pct = quota > 0 ? Math.min((usage / quota) * 100, 100) : 0;
-
             storageUsageFill.style.width = pct.toFixed(1) + '%';
             storageUsageLabel.textContent = `${formatBytes(usage)} / ${formatBytes(quota)} (${pct.toFixed(1)}%)`;
             storageUsageDetail.textContent = `Using ${formatBytes(usage)} of ${formatBytes(quota)} available storage.`;
-
-            // Color the bar based on usage
             if (pct > 90) {
                 storageUsageFill.style.background = '#e74c3c';
             } else if (pct > 70) {

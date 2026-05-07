@@ -28,14 +28,22 @@ import {
   analyzeImageWithGemini,
   analyzeTextWithGemini,
   getApiKey,
+  analyzeImageWithHyperspace,
+  analyzeTextWithHyperspace,
+  testHyperspaceConnection,
 } from "./lib/api.js";
+
+/** Returns the active AI provider: 'gemini' | 'hyperspace' */
+async function getActiveProvider() {
+  const r = await chrome.storage.local.get(['aiProvider']);
+  return r.aiProvider || 'gemini';
+}
 import {
   generatePagePDF,
   pdfToDataUrl,
   estimatePDFSize,
   PDFPresets,
 } from "./lib/pdf-generator.js";
-import { localAI } from "./lib/local-ai.js"; // This is currently the keyword-based AI
 import {
   DRAWIO_EXTRACTION_SCHEMA,
   DRAWIO_EXTRACTION_PROMPT,
@@ -274,6 +282,9 @@ function sendPanelStatus(message, type = "info") {
         }
     });
 }
+
+// Holds generated draw.io XML keyed by itemId — cleared when the service worker restarts
+const drawioXmlCache = new Map();
 
 // --- Message Listener ---
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -1033,7 +1044,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         .catch((error) =>
           sendResponse({ success: false, error: error.message })
         );
-      break;
+      return true;
 
     case "EXPORT_PROJECT_FOR_AI":
       handleExportProjectForAI(message.payload)
@@ -1041,7 +1052,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         .catch((error) =>
           sendResponse({ success: false, error: error.message })
         );
-      break;
+      return true;
 
     // --- Key Points Generation Handler ---
     case "GET_KEY_POINTS_FOR_TAG":
@@ -1101,49 +1112,66 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }
       break;
 
-    case "INITIALIZE_LOCAL_AI":
-      handleInitializeLocalAI()
-        .then((result) => sendResponse(result))
-        .catch((error) =>
-          sendResponse({ success: false, error: error.message })
-        );
+    case "CHAT_MESSAGE":
+      (async () => {
+        try {
+          const { tagIds, userMessage, history } = message.payload || {};
+          if (!userMessage) {
+            sendResponse({ success: false, error: "userMessage is required." });
+            return;
+          }
+          const result = await handleChatMessage(tagIds || [], userMessage, history || []);
+          sendResponse(result);
+        } catch (err) {
+          sendResponse({ success: false, error: err.message || String(err) });
+        }
+      })();
       break;
 
-    case "SUGGEST_TAGS_FOR_CONTENT":
-      const suggestContent = message.payload?.content;
-      if (!suggestContent || typeof suggestContent !== "string") {
-        sendResponse({
-          success: false,
-          error: "Invalid content for tag suggestions.",
-        });
+    case "SAVE_CHAT_SESSION":
+      (async () => {
+        try {
+          const { history, tagNames } = message.payload || {};
+          if (!Array.isArray(history) || history.length === 0) {
+            sendResponse({ success: false, error: "No conversation to save." });
+            return;
+          }
+          const date = new Date().toISOString().slice(0, 10);
+          const tagLabel = Array.isArray(tagNames) && tagNames.length > 0
+            ? tagNames.join(", ") : "all items";
+          const lines = [`# Chat — ${tagLabel}`, `_${date}_`, ""];
+          for (const m of history) {
+            lines.push(`**${m.role === "user" ? "You" : "Assistant"}:**`);
+            lines.push(m.content);
+            lines.push("");
+          }
+          const tagsToApply = [...(Array.isArray(tagNames) ? tagNames : []), "chat"];
+          const itemId = await saveContent({
+            type: "chat_session",
+            title: `Chat — ${tagLabel} (${date})`,
+            content: lines.join("\n"),
+            url: "",
+            tags: tagsToApply,
+          });
+          sendResponse({ success: true });
+        } catch (err) {
+          sendResponse({ success: false, error: err.message || String(err) });
+        }
+      })();
+      return true;
+
+    case "DOWNLOAD_FILE": {
+      const { dataUrl, filename } = message.payload || {};
+      if (!dataUrl || !filename) {
+        sendResponse({ success: false, error: "dataUrl and filename required." });
         isResponseAsync = false;
-      } else {
-        handleSuggestTags(suggestContent)
-          .then((result) => sendResponse(result))
-          .catch((error) =>
-            sendResponse({ success: false, error: error.message })
-          );
+        break;
       }
-      break;
-
-    case "GENERATE_EMBEDDINGS_FOR_TAGS":
-      handleGenerateTagEmbeddings()
-        .then((result) => sendResponse(result))
-        .catch((error) =>
-          sendResponse({ success: false, error: error.message })
-        );
-      break;
-
-    case "GET_LOCAL_AI_STATUS":
-      sendResponse({
-        success: true,
-        payload: {
-          isReady: localAI.isReady(),
-          memoryInfo: localAI.getMemoryInfo(),
-        },
+      chrome.downloads.download({ url: dataUrl, filename, saveAs: false }, () => {
+        sendResponse({ success: true });
       });
-      isResponseAsync = false;
-      break;
+      return true;
+    }
 
     case "CONVERT_TO_DRAWIO":
       (async () => {
@@ -1162,20 +1190,41 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             return;
           }
 
-          console.log(`[DrawIO] Starting rich extraction for item ${drawioItemId}...`);
-          sendPanelStatus("Analyzing diagram for draw.io conversion...", "info");
+          // Short-circuit: if extraction was already persisted, skip the vision call
+          if (item.diagram_extraction) {
+            console.log(`[DrawIO] Using cached extraction for item ${drawioItemId}, skipping vision call.`);
+            const cachedXml = buildDrawioXml(item.diagram_extraction);
+            drawioXmlCache.set(drawioItemId, cachedXml);
+            const compCount = (item.diagram_extraction.components || []).length;
+            const connCount = (item.diagram_extraction.connections || []).length;
+            sendPanelStatus(`draw.io ready! ${compCount} components, ${connCount} connections (cached)`, "success");
+            sendResponse({ success: true, xml: cachedXml });
+            return;
+          }
 
-          // 2. Call Gemini with the rich extraction prompt + schema
-          const geminiResponse = await analyzeImageWithGemini(
-            item.content,
-            DRAWIO_EXTRACTION_PROMPT,
-            {
-              forceJson: true,
-              schema: DRAWIO_EXTRACTION_SCHEMA,
-              temperature: 0.1,
-              maxOutputTokens: 65536,
-            }
-          );
+          console.log(`[DrawIO] Starting rich extraction for item ${drawioItemId}...`);
+
+          // 2. Analyze the image with the active provider — start elapsed ticker
+          const _drawioProvider = await getActiveProvider();
+          const _drawioStart = Date.now();
+          sendPanelStatus("[1/3] Sending image to AI for diagram extraction... (0s)", "info");
+          const _drawioTicker = setInterval(() => {
+            const elapsed = Math.round((Date.now() - _drawioStart) / 1000);
+            sendPanelStatus(`[1/3] AI extracting diagram structure... (${elapsed}s)`, "info");
+          }, 2000);
+
+          let geminiResponse;
+          try {
+            geminiResponse = _drawioProvider === 'hyperspace'
+              ? await analyzeImageWithHyperspace(item.content, DRAWIO_EXTRACTION_PROMPT, { forceJson: true, schema: DRAWIO_EXTRACTION_SCHEMA, maxTokens: 16000 })
+              : await analyzeImageWithGemini(item.content, DRAWIO_EXTRACTION_PROMPT, { forceJson: true, schema: DRAWIO_EXTRACTION_SCHEMA, temperature: 0.1, maxOutputTokens: 65536 });
+          } finally {
+            clearInterval(_drawioTicker);
+          }
+
+          const elapsed = Math.round((Date.now() - _drawioStart) / 1000);
+          console.log(`[DrawIO] AI extraction completed in ${elapsed}s`);
+          sendPanelStatus(`[2/3] Parsing and validating extraction... (${elapsed}s)`, "info");
 
           const jsonText = extractTextFromResult(geminiResponse);
           if (!jsonText) {
@@ -1208,35 +1257,30 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             connections: (extractionData.connections || []).length,
           });
 
+          // Validate required fields before attempting XML build
+          const requiredFields = ['diagram_type', 'title', 'description', 'purpose', 'keywords', 'complexity', 'layout_direction', 'grid_dimensions', 'containers', 'components', 'connections'];
+          const missingFields = requiredFields.filter(f => extractionData[f] === undefined);
+          if (missingFields.length > 0) {
+            console.error("[DrawIO] Extraction missing required fields:", missingFields);
+            sendResponse({ success: false, error: `Extraction response missing required fields: ${missingFields.join(', ')}` });
+            return;
+          }
+
           // 3. Build draw.io XML
-          sendPanelStatus("Building draw.io XML...", "info");
+          sendPanelStatus("[3/3] Building draw.io XML...", "info");
           const drawioXml = buildDrawioXml(extractionData);
 
-          // 4. Trigger download via Blob → base64 data URL (reliable in service workers)
-          const blob = new Blob([drawioXml], { type: "application/xml" });
-          const dataUrl = await new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(reader.result);
-            reader.onerror = () => reject(new Error("Failed to create download data URL"));
-            reader.readAsDataURL(blob);
-          });
+          // 4. Persist extraction JSON to DB so future calls skip the vision call
+          await updateContentItem(drawioItemId, { diagram_extraction: extractionData });
 
-          const safeTitle = (item.title || "diagram")
-            .replace(/[^a-zA-Z0-9_-]/g, "_")
-            .substring(0, 40);
-          const timestamp = new Date().toISOString().slice(0, 10);
-          const filename = `${safeTitle}_${timestamp}.drawio`;
+          // 5. Cache XML in memory for the current session
+          drawioXmlCache.set(drawioItemId, drawioXml);
 
-          const downloadId = await chrome.downloads.download({
-            url: dataUrl,
-            filename: filename,
-            saveAs: true,
-          });
-          console.log(`[DrawIO] Download initiated, downloadId: ${downloadId}`);
-
-          console.log(`[DrawIO] File downloaded: ${filename}`);
-          sendPanelStatus("draw.io file downloaded successfully!", "success");
-          sendResponse({ success: true, filename: filename });
+          const totalElapsed = Math.round((Date.now() - _drawioStart) / 1000);
+          const compCount = (extractionData.components || []).length;
+          const connCount = (extractionData.connections || []).length;
+          sendPanelStatus(`draw.io ready! ${compCount} components, ${connCount} connections (${totalElapsed}s)`, "success");
+          sendResponse({ success: true, xml: drawioXml });
         } catch (error) {
           console.error("[DrawIO] Conversion failed:", error);
           sendPanelStatus(`draw.io conversion failed: ${error.message}`, "error");
@@ -1244,6 +1288,84 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
       })();
       break;
+
+    // case "CONVERT_TO_TOML": (disabled pending proper TOML serializer)
+
+    case "OPEN_DRAWIO": {
+      const openItemId = message.payload?.itemId;
+      (async () => {
+        try {
+          let xml = drawioXmlCache.get(openItemId);
+          if (!xml) {
+            const items = await getContentItemsByIds([openItemId]);
+            const extraction = items?.[0]?.diagram_extraction;
+            if (!extraction) {
+              sendResponse({ success: false, error: "No draw.io data found — please convert first." });
+              return;
+            }
+            xml = buildDrawioXml(extraction);
+            drawioXmlCache.set(openItemId, xml);
+          }
+          const encoded = encodeURIComponent(xml);
+          chrome.tabs.create({ url: `https://app.diagrams.net/#R${encoded}` });
+          sendResponse({ success: true });
+        } catch (err) {
+          sendResponse({ success: false, error: err.message });
+        }
+      })();
+      return true;
+    }
+
+    case "DOWNLOAD_DRAWIO": {
+      const dlItemId = message.payload?.itemId;
+      const dlFilename = message.payload?.filename || "diagram.drawio";
+      (async () => {
+        try {
+          let dlXml = drawioXmlCache.get(dlItemId);
+          if (!dlXml) {
+            const items = await getContentItemsByIds([dlItemId]);
+            const extraction = items?.[0]?.diagram_extraction;
+            if (!extraction) {
+              sendResponse({ success: false, error: "No draw.io data found — please convert first." });
+              return;
+            }
+            dlXml = buildDrawioXml(extraction);
+            drawioXmlCache.set(dlItemId, dlXml);
+          }
+          const dataUrl = "data:application/xml;charset=utf-8," + encodeURIComponent(dlXml);
+          chrome.downloads.download({ url: dataUrl, filename: dlFilename, saveAs: false }, () => {
+            sendResponse({ success: true });
+          });
+        } catch (err) {
+          sendResponse({ success: false, error: err.message });
+        }
+      })();
+      return true;
+    }
+    //   (async () => {
+    //     try {
+    //       const tomlItemId = message.payload?.itemId;
+    //       if (typeof tomlItemId !== "number") { sendResponse({ success: false, error: "Invalid item ID." }); return; }
+    //       const items = await getContentItemsByIds([tomlItemId]);
+    //       const item = items && items[0];
+    //       if (!item) { sendResponse({ success: false, error: "Item not found." }); return; }
+    //       const tomlContent = buildToml(item);
+    //       const blob = new Blob([tomlContent], { type: "text/plain" });
+    //       const dataUrl = await new Promise((resolve, reject) => {
+    //         const reader = new FileReader();
+    //         reader.onload = () => resolve(reader.result);
+    //         reader.onerror = () => reject(new Error("Failed to create download data URL"));
+    //         reader.readAsDataURL(blob);
+    //       });
+    //       const safeTitle = (item.title || "item").replace(/[^a-zA-Z0-9_-]/g, "_").substring(0, 40);
+    //       const filename = `${safeTitle}_${new Date().toISOString().slice(0, 10)}.toml`;
+    //       await chrome.downloads.download({ url: dataUrl, filename, saveAs: true });
+    //       sendResponse({ success: true, filename });
+    //     } catch (error) {
+    //       sendResponse({ success: false, error: error.message || String(error) });
+    //     }
+    //   })();
+    //   break;
 
     case "GET_STORAGE_ESTIMATE":
       (async () => {
@@ -1269,6 +1391,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             success: false,
             error: `Storage estimate failed: ${error.message}`,
           });
+        }
+      })();
+      break;
+
+    // --- Hyperspace connection test ---
+    case "TEST_HYPERSPACE_CONNECTION":
+      (async () => {
+        try {
+          const result = await testHyperspaceConnection();
+          sendResponse(result);
+        } catch (err) {
+          sendResponse({ success: false, message: err.message });
         }
       })();
       break;
@@ -1925,7 +2059,10 @@ async function handleGetKeyPoints(tagId) {
 
     const prompt = `Based *only* on the following text compiled from saved web content, please extract the main key points or provide a concise summary. Present the key points clearly, perhaps using bullet points:\n\n${combinedText}`;
     console.log(`[KeyPoints] Sending combined text to AI for tag ID: ${tagId}`);
-    const analysisResponse = await analyzeTextWithGemini(combinedText, prompt);
+    const _kpProvider = await getActiveProvider();
+    const analysisResponse = _kpProvider === 'hyperspace'
+      ? await analyzeTextWithHyperspace(combinedText, prompt)
+      : await analyzeTextWithGemini(combinedText, prompt);
     const keyPoints = extractTextFromResult(analysisResponse);
     if (!keyPoints) {
       throw new Error("AI analysis did not return usable text content.");
@@ -2126,6 +2263,7 @@ async function analyzeScreenshotAndUpdate(itemId, imageDataUrl) {
   console.log(`[${itemId}] Starting analysis pipeline...`);
   const analysisResults = {};
   let analysisOverallSuccess = true;
+  const _ssProvider = await getActiveProvider();
   try {
     const prompts = {
       description: "Describe this image concisely.",
@@ -2136,7 +2274,9 @@ async function analyzeScreenshotAndUpdate(itemId, imageDataUrl) {
     };
     try {
       console.log(`[${itemId}] Requesting description...`);
-      const r = await analyzeImageWithGemini(imageDataUrl, prompts.description);
+      const r = _ssProvider === 'hyperspace'
+        ? await analyzeImageWithHyperspace(imageDataUrl, prompts.description)
+        : await analyzeImageWithGemini(imageDataUrl, prompts.description);
       analysisResults.description = extractTextFromResult(r);
       console.log(`[${itemId}] Description received.`);
     } catch (e) {
@@ -2146,16 +2286,17 @@ async function analyzeScreenshotAndUpdate(itemId, imageDataUrl) {
     }
     try {
       console.log(`[${itemId}] Requesting diagram/chart analysis (Structured Output)...`);
-      const r = await analyzeImageWithGemini(
-        imageDataUrl,
-        prompts.diagram_chart,
-        // --- Structured Output Configuration for Diagram Fix ---
-        { 
-          forceJson: true, 
-          schema: DIAGRAM_SCHEMA, // Use the defined schema
-          temperature: 0.1 // Lower temperature for structure compliance
-        }
-      );
+      const r = _ssProvider === 'hyperspace'
+        ? await analyzeImageWithHyperspace(imageDataUrl, prompts.diagram_chart, { forceJson: true })
+        : await analyzeImageWithGemini(
+          imageDataUrl,
+          prompts.diagram_chart,
+          {
+            forceJson: true,
+            schema: DIAGRAM_SCHEMA,
+            temperature: 0.1
+          }
+        );
       
       const jsonText = extractTextFromResult(r);
       
@@ -2186,7 +2327,9 @@ async function analyzeScreenshotAndUpdate(itemId, imageDataUrl) {
     try {
       console.log(`[${itemId}] Requesting layout analysis...`);
       // NOTE: Layout analysis still uses loose JSON parsing (`tryParseJson`)
-      const r = await analyzeImageWithGemini(imageDataUrl, prompts.layout);
+      const r = _ssProvider === 'hyperspace'
+        ? await analyzeImageWithHyperspace(imageDataUrl, prompts.layout, { forceJson: true })
+        : await analyzeImageWithGemini(imageDataUrl, prompts.layout);
       const t = extractTextFromResult(r);
       if (t) {
         analysisResults.layout = tryParseJson(t, "layout");
@@ -2667,6 +2810,10 @@ async function cropImageCanvas(dataUrl, rect, devicePixelRatio) {
 }
 
 // --- Utility Functions ---
+
+// buildToml — disabled pending proper TOML serializer
+// function buildToml(item) { ... }
+
 function extractTextFromResult(result) {
   try {
     const text = result?.candidates?.[0]?.content?.parts?.[0]?.text;
@@ -3272,223 +3419,67 @@ async function generatePDFFromHTML(htmlContent, filename) {
   }
 }
 
-async function handleInitializeLocalAI() {
-  try {
-    console.log("[LocalAI] Initializing Universal Sentence Encoder...");
+async function handleChatMessage(tagIds, userMessage, history) {
+  // Gather items for all selected tags
+  const allItemIds = new Set();
+  const tagNames = [];
 
-    // Check if already initialized
-    if (localAI.isReady()) {
-      return { success: true, message: "Local AI already initialized." };
-    }
-
-    // Initialize the model (this will download ~25MB on first use)
-    await localAI.initialize();
-
-    console.log("[LocalAI] Initialization complete");
-    return {
-      success: true,
-      message:
-        "Local AI initialized successfully. Tag suggestions are now available.",
-    };
-  } catch (error) {
-    console.error("[LocalAI] Initialization failed:", error);
-    return {
-      success: false,
-      error: `Failed to initialize Local AI: ${error.message}`,
-    };
+  for (const tagId of tagIds) {
+    try {
+      const tags = await getTagsByIds([tagId]);
+      if (tags?.[0]?.name) tagNames.push(tags[0].name);
+      const ids = await getContentIdsByTagId(tagId);
+      (ids || []).forEach(id => allItemIds.add(id));
+    } catch (_) {}
   }
-}
 
-/**
- * Suggest tags for given content using local AI
- */
-async function handleSuggestTags(content) {
-  try {
-    console.log("[LocalAI] Generating tag suggestions for content");
+  const items = await getContentItemsByIds([...allItemIds]);
+  const textItems = items
+    .filter(item => (item.type === "page" || item.type === "selection") && item.content)
+    .slice(0, MAX_ITEMS_FOR_SUMMARY);
 
-    // Ensure AI is initialized
-    if (!localAI.isReady()) {
-      return {
-        success: false,
-        error: "Local AI not initialized. Please enable AI features first.",
-      };
-    }
+  if (textItems.length === 0) {
+    return { success: false, error: "No text items found for the selected tags." };
+  }
 
-    // Get all existing tags with their embeddings
-    const existingTagsWithEmbeddings = await getTagsWithEmbeddings();
+  const contextChunks = textItems.map(item => {
+    const title = item.title || item.url || `Item ${item.id}`;
+    const body = (item.content || "").substring(0, 3000);
+    return `--- ${title} ---\n${body}`;
+  });
 
-    if (existingTagsWithEmbeddings.length === 0) {
-      return {
-        success: true,
-        payload: [],
-        message: "No existing tags found for comparison.",
-      };
-    }
+  const systemPrompt =
+    `You are a research assistant helping the user explore their saved web research.\n` +
+    `The following content was saved and tagged with: ${tagNames.join(", ") || "selected tags"}.\n` +
+    `Answer the user's questions based only on this material. Be concise and cite sources by title when relevant.\n\n` +
+    contextChunks.join("\n\n");
 
-    // Generate suggestions
-    const suggestions = await localAI.suggestTags(
-      content,
-      existingTagsWithEmbeddings
+  // Build conversation for the AI
+  const messages = [
+    ...history.map(h => ({ role: h.role, content: h.content })),
+    { role: "user", content: userMessage },
+  ];
+
+  const provider = await getActiveProvider();
+  let responseText;
+
+  if (provider === 'hyperspace') {
+    // analyzeTextWithHyperspace is statically imported at the top of this file
+    const resp = await analyzeTextWithHyperspace(
+      messages.map(m => `${m.role === "user" ? "User" : "Assistant"}: ${m.content}`).join("\n"),
+      systemPrompt
     );
-
-    console.log(`[LocalAI] Generated ${suggestions.length} tag suggestions`);
-    return {
-      success: true,
-      payload: suggestions,
-      message: `Found ${suggestions.length} suggested tags.`,
-    };
-  } catch (error) {
-    console.error("[LocalAI] Error suggesting tags:", error);
-    return {
-      success: false,
-      error: `Failed to suggest tags: ${error.message}`,
-    };
+    responseText = extractTextFromResult(resp);
+  } else {
+    const historyText = history.map(h => `${h.role === "user" ? "User" : "Assistant"}: ${h.content}`).join("\n");
+    const fullPrompt = `${systemPrompt}\n\n${historyText ? historyText + "\n" : ""}User: ${userMessage}\nAssistant:`;
+    const resp = await analyzeTextWithGemini(fullPrompt, "");
+    responseText = extractTextFromResult(resp);
   }
-}
 
-/**
- * Generate embeddings for all existing tags
- */
-async function handleGenerateTagEmbeddings() {
-  try {
-    console.log("[LocalAI] Generating embeddings for existing tags");
+  if (!responseText) throw new Error("AI returned no content.");
 
-    // Ensure AI is initialized
-    if (!localAI.isReady()) {
-      return {
-        success: false,
-        error: "Local AI not initialized. Please enable AI features first.",
-      };
-    }
-
-    // Get all existing tags
-    const allTags = await getAllTags();
-
-    if (allTags.length === 0) {
-      return {
-        success: true,
-        payload: { processed: 0, skipped: 0 },
-        message: "No tags found to process.",
-      };
-    }
-
-    let processed = 0;
-    let skipped = 0;
-
-    // Process tags in batches to avoid overwhelming the system
-    const batchSize = 10;
-    for (let i = 0; i < allTags.length; i += batchSize) {
-      const batch = allTags.slice(i, i + batchSize);
-
-      for (const tag of batch) {
-        try {
-          // Check if tag already has embedding
-          const existingEmbedding = await getTagEmbedding(tag.id);
-          if (existingEmbedding) {
-            skipped++;
-            continue;
-          }
-
-          // Generate embedding for tag name
-          const embedding = await localAI.embed(tag.name);
-
-          // Store embedding in database
-          await saveTagEmbedding(tag.id, embedding);
-          processed++;
-
-          console.log(`[LocalAI] Generated embedding for tag: ${tag.name}`);
-        } catch (error) {
-          console.error(`[LocalAI] Failed to process tag ${tag.name}:`, error);
-          skipped++;
-        }
-      }
-
-      // Small delay between batches to avoid blocking
-      if (i + batchSize < allTags.length) {
-        await new Promise((resolve) => setTimeout(resolve, 100));
-      }
-    }
-
-    console.log(
-      `[LocalAI] Embedding generation complete: ${processed} processed, ${skipped} skipped`
-    );
-    return {
-      success: true,
-      payload: { processed, skipped, total: allTags.length },
-      message: `Processed ${processed} tags, skipped ${skipped} existing.`,
-    };
-  } catch (error) {
-    console.error("[LocalAI] Error generating tag embeddings:", error);
-    return {
-      success: false,
-      error: `Failed to generate embeddings: ${error.message}`,
-    };
-  }
-}
-
-/**
- * Get all tags with their embeddings for similarity comparison
- */
-async function getTagsWithEmbeddings() {
-  try {
-    const allTags = await getAllTags();
-    const tagsWithEmbeddings = [];
-
-    for (const tag of allTags) {
-      const embedding = await getTagEmbedding(tag.id);
-      if (embedding) {
-        tagsWithEmbeddings.push({
-          id: tag.id,
-          name: tag.name,
-          embedding: embedding,
-        });
-      }
-    }
-
-    return tagsWithEmbeddings;
-  } catch (error) {
-    console.error("[LocalAI] Error getting tags with embeddings:", error);
-    return [];
-  }
-}
-
-/**
- * Get embedding for a specific tag (stored separately for performance)
- */
-async function getTagEmbedding(tagId) {
-  try {
-    // Get from chrome.storage.local (embeddings can be large)
-    const key = `tag_embedding_${tagId}`;
-    return new Promise((resolve) => {
-      chrome.storage.local.get([key], (result) => {
-        resolve(result[key] || null);
-      });
-    });
-  } catch (error) {
-    console.error(`[LocalAI] Error getting embedding for tag ${tagId}:`, error);
-    return null;
-  }
-}
-
-/**
- * Save embedding for a tag
- */
-async function saveTagEmbedding(tagId, embedding) {
-  try {
-    const key = `tag_embedding_${tagId}`;
-    return new Promise((resolve, reject) => {
-      chrome.storage.local.set({ [key]: embedding }, () => {
-        if (chrome.runtime.lastError) {
-          reject(chrome.runtime.lastError);
-        } else {
-          resolve();
-        }
-      });
-    });
-  } catch (error) {
-    console.error(`[LocalAI] Error saving embedding for tag ${tagId}:`, error);
-    throw error;
-  }
+  return { success: true, reply: responseText };
 }
 
 console.log(

@@ -4,13 +4,15 @@
 // A) DRAWIO_EXTRACTION_SCHEMA  — Gemini Structured Output schema
 // ────────────────────────────────────────────────────────────────
 
-export const DRAWIO_EXTRACTION_SCHEMA = {
+export const DIAGRAM_EXTRACTION_SCHEMA = {
   type: "OBJECT",
   description:
-    "A rich, structured extraction of a diagram image suitable for generating a draw.io XML file. " +
+    "A rich, structured extraction of a diagram image. Serves as the canonical source for " +
+    "multiple output formats (draw.io XML, Mermaid, SVG, PNG, text reports, chat context). " +
     "All positions use a grid-relative coordinate system (column/row indices starting at 0). " +
     "Colors should be hex codes (e.g. '#E1F5FE'). If a value is unknown, use a sensible default.",
   properties: {
+    // ── Semantic / report fields ──────────────────────────────────
     diagram_type: {
       type: "STRING",
       description:
@@ -20,6 +22,31 @@ export const DRAWIO_EXTRACTION_SCHEMA = {
       type: "STRING",
       description: "The title of the diagram as displayed in the image, or a short inferred title if none is visible.",
     },
+    description: {
+      type: "STRING",
+      description:
+        "2-3 sentence plain English summary of what this diagram shows, who/what the main actors are, " +
+        "and what process or architecture it represents. Used in reports and chat context.",
+    },
+    purpose: {
+      type: "STRING",
+      description:
+        "One sentence describing the decision, process, or system this diagram documents. " +
+        "E.g. 'Shows the OAuth 2.0 authorization flow between the mobile app and identity provider.'",
+    },
+    keywords: {
+      type: "ARRAY",
+      description:
+        "Domain terms, product names, and technology keywords visible or strongly implied in the diagram. " +
+        "Used for search and tag suggestions. E.g. ['SAP BTP', 'OAuth', 'microservice', 'API Gateway'].",
+      items: { type: "STRING" },
+    },
+    complexity: {
+      type: "STRING",
+      description: "Visual complexity of the diagram: 'simple' (< 8 components), 'moderate' (8-20), 'complex' (> 20).",
+    },
+
+    // ── Layout / draw.io geometry fields ─────────────────────────
     layout_direction: {
       type: "STRING",
       description:
@@ -96,6 +123,12 @@ export const DRAWIO_EXTRACTION_SCHEMA = {
             type: "STRING",
             description: "Secondary text line below the label, or empty string if none.",
           },
+          role: {
+            type: "STRING",
+            description:
+              "Semantic role of this component: 'system', 'service', 'database', 'user', " +
+              "'process', 'decision', 'data', 'external', 'other'. Used in text summaries and chat.",
+          },
           shape: {
             type: "STRING",
             description:
@@ -108,10 +141,12 @@ export const DRAWIO_EXTRACTION_SCHEMA = {
           grid_position: {
             type: "OBJECT",
             properties: {
-              col: { type: "INTEGER", description: "Column index (0-based)." },
-              row: { type: "INTEGER", description: "Row index (0-based)." },
+              col: { type: "INTEGER", description: "Starting column index (0-based)." },
+              row: { type: "INTEGER", description: "Starting row index (0-based)." },
+              col_span: { type: "INTEGER", description: "Number of columns this component spans. 1 for most components; >1 for wide/full-width elements like header bars." },
+              row_span: { type: "INTEGER", description: "Number of rows this component spans. 1 for most components; >1 for tall elements." },
             },
-            required: ["col", "row"],
+            required: ["col", "row", "col_span", "row_span"],
           },
           style: {
             type: "OBJECT",
@@ -139,6 +174,12 @@ export const DRAWIO_EXTRACTION_SCHEMA = {
             type: "STRING",
             description: "Text label on the connection, or empty string if none.",
           },
+          relationship_type: {
+            type: "STRING",
+            description:
+              "Semantic meaning of this connection: 'depends_on', 'calls', 'data_flow', " +
+              "'contains', 'extends', 'triggers', 'other'. Used by Mermaid/PlantUML renderers.",
+          },
           line_style: {
             type: "STRING",
             description: "Line style: 'solid', 'dashed', 'dotted'.",
@@ -156,6 +197,10 @@ export const DRAWIO_EXTRACTION_SCHEMA = {
   required: [
     "diagram_type",
     "title",
+    "description",
+    "purpose",
+    "keywords",
+    "complexity",
     "layout_direction",
     "grid_dimensions",
     "containers",
@@ -164,51 +209,61 @@ export const DRAWIO_EXTRACTION_SCHEMA = {
   ],
 };
 
+// Back-compat alias — existing callers that reference DRAWIO_EXTRACTION_SCHEMA still work
+export const DRAWIO_EXTRACTION_SCHEMA = DIAGRAM_EXTRACTION_SCHEMA;
+
 // ────────────────────────────────────────────────────────────────
 // B) DRAWIO_EXTRACTION_PROMPT
 // ────────────────────────────────────────────────────────────────
 
-export const DRAWIO_EXTRACTION_PROMPT = `You are a precision diagram-extraction engine. Your job is to convert the visual diagram in this image into a rich structured JSON that will be used to generate a draw.io XML file.
+export const DRAWIO_EXTRACTION_PROMPT = `You are a precision diagram-extraction engine. Your job is to convert the visual diagram in this image into a rich structured JSON that serves as the canonical source for multiple outputs: draw.io XML, Mermaid diagrams, SVG/PNG exports, text reports, and chat context.
 
 Follow these phases carefully:
 
-## PHASE 1 — Full Visual Scan
-- Identify the diagram type (architecture, flowchart, network, etc.)
-- Read the title or infer one if not visible
-- Determine the primary flow direction (top-to-bottom, left-to-right, etc.)
+## PHASE 1 — Semantic Understanding
+- Identify the diagram type (architecture, flowchart, network, sequence, org_chart, er_diagram, mindmap, other)
+- Read the title or infer a short descriptive one if not visible
+- Write a 2-3 sentence plain English description of what this diagram shows — who/what the main actors are and what process or system it represents
+- Write one sentence stating the purpose: what decision, process, or system this diagram documents
+- Extract keywords: domain terms, product names, technology names visible or strongly implied
+- Assess complexity: 'simple' (< 8 components), 'moderate' (8-20), 'complex' (> 20)
+- Determine the primary flow direction (TB, LR, RL, BT)
 - If a color legend exists, decode every entry with its exact hex color
 
 ## PHASE 2 — Container Hierarchy
 - Identify ALL grouping regions, swimlanes, or bounding boxes that contain other elements
 - Determine the nesting hierarchy (which containers are inside other containers)
 - List parent containers BEFORE their children
-- For each container record: label, colors, border style, and grid position
+- For each container record: label, colors, border style, and grid position with col_span and row_span
 
 ## PHASE 3 — Component Inventory
 - Catalog EVERY individual box, shape, circle, diamond, or text element
 - For each component record:
   - ALL text (primary label AND any subtitle/secondary text — read every word carefully)
-  - Exact shape type (rectangle, rounded rectangle, ellipse, diamond, hexagon, cylinder, text-only)
+  - Semantic role: 'system', 'service', 'database', 'user', 'process', 'decision', 'data', 'external', 'other'
+  - Exact shape type (rectangle, rounded_rectangle, ellipse, diamond, hexagon, cylinder, text)
   - Fill color and border color (use hex codes — sample the color precisely)
   - Which container it belongs to (parent_id)
-  - Its position in the logical grid (column, row)
+  - Grid position: col, row, col_span, row_span (most components are 1×1; wide header bars or full-width elements use col_span > 1)
 
 ## PHASE 4 — Connection Mapping
 - Trace EVERY arrow and line connecting elements
-- For each connection record: source, target, any label text, line style (solid/dashed/dotted), color, and direction
+- For each connection record: source, target, any label text, line style (solid/dashed/dotted), color, direction
+- Also record the semantic relationship_type: 'depends_on', 'calls', 'data_flow', 'contains', 'extends', 'triggers', 'other'
 
 ## POSITIONING RULES
 - Divide the diagram into a logical grid of columns and rows
 - Report grid_dimensions (total columns × total rows)
 - Assign each element a (col, row) position in this grid (0-based indices)
-- Containers use col_span and row_span to indicate how many cells they cover
+- All elements use col_span and row_span — default 1 for both unless the element visually spans multiple cells
 - Be consistent: elements that are visually aligned should share the same row or column index
 
 ## CRITICAL REQUIREMENTS
 - Do NOT skip any element — count every box in the image and ensure your output has the same count
 - Read ALL text precisely — do not paraphrase or abbreviate labels
 - Use accurate hex color codes — sample colors carefully
-- Every component and container must have a unique id`;
+- Every component and container must have a unique id
+- description, purpose, and keywords are required — they power reports and chat across the knowledge base`;
 
 // ────────────────────────────────────────────────────────────────
 // C) buildDrawioXml(data)  — Deterministic JSON → draw.io XML
@@ -420,11 +475,15 @@ export function buildDrawioXml(data) {
     const numId = cellIdCounter++;
     idMap[comp.id] = numId;
 
-    const gp = comp.grid_position || { col: 0, row: 0 };
+    const gp = comp.grid_position || { col: 0, row: 0, col_span: 1, row_span: 1 };
     const absPos = gridToPixel(gp.col, gp.row);
 
-    const w = CELL_W;
-    const h = comp.subtitle ? CELL_H : Math.round(CELL_H * 0.75);
+    const colSpan = gp.col_span || 1;
+    const rowSpan = gp.row_span || 1;
+    const w = colSpan * (CELL_W + GAP_X) - GAP_X;
+    const h = rowSpan > 1
+      ? rowSpan * (CELL_H + GAP_Y) - GAP_Y
+      : comp.subtitle ? CELL_H : Math.round(CELL_H * 0.75);
 
     const parentMxId =
       comp.parent_id && idMap[comp.parent_id] ? idMap[comp.parent_id] : 1;

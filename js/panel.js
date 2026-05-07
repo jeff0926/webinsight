@@ -25,26 +25,33 @@ const keyPointsResultDisplayArea = document.getElementById(
 );
 const generateReportBtn = document.getElementById("generateReportBtn"); // Button for generate report
 const exportProjectBtn = document.getElementById("exportProjectBtn"); // New button
-const aiStatusIndicator = document.getElementById("aiStatusIndicator");
-const initializeAIBtn = document.getElementById("initializeAIBtn");
-const generateEmbeddingsBtn = document.getElementById("generateEmbeddingsBtn");
+const aiStatusIndicator = null; // removed — local AI eliminated
+const initializeAIBtn = null;
+const generateEmbeddingsBtn = null;
 const saveSettingsBtn = document.getElementById("saveSettingsBtn");
 const someOtherCheckbox = document.getElementById("someOtherCheckbox");
+// Chat elements
+const chatAccordionHintEl = document.querySelector("#chatAccordion .panel-accordion-hint");
+const chatHistoryEl = document.getElementById("chatHistory");
+const chatInputEl = document.getElementById("chatInput");
+const chatSendBtn = document.getElementById("chatSendBtn");
+const chatSaveBtn = document.getElementById("chatSaveBtn");
+const chatNewBtn = document.getElementById("chatNewBtn");
 
 // --- State ---
 
     let currentFilterTagIds = []; // Keep track of active filter tag IDs
     let currentFilterTagNames = []; // Keep track of active filter tag names
-    
+
 let currentItemsCache = []; // Cache the full list of items
 const ITEMS_PAGE_SIZE = 20; // Number of items to load per page
+
+// Chat state
+let chatConversationHistory = [];
 let currentPageOffset = 0; // Current pagination offset
 let totalItemCount = 0; // Total items in DB (for unfiltered view)
 let isLoadingMore = false; // Prevent duplicate page loads
 let suppressContentReload = false; // Suppress storage-listener reload during tag operations
-let aiInitialized = false;
-let aiLoading = false;
-let aiMode = "local-first"; // default if not set yet
 
 // Make it globally accessible for debugging
 window.currentItemsCache = currentItemsCache;
@@ -201,7 +208,8 @@ function handleAnonymizeContent(itemId, buttonEl, detailElement) {
 
 /**
  * Handles the "Convert to draw.io" button click.
- * Sends the item to background for rich Gemini extraction + XML generation + download.
+ * Sends the item to background for rich Gemini extraction + XML generation.
+ * On success the button turns green and the download/open icon buttons activate.
  */
 function handleConvertToDrawio(itemId, buttonEl) {
     if (!buttonEl) return;
@@ -210,15 +218,21 @@ function handleConvertToDrawio(itemId, buttonEl) {
     buttonEl.textContent = 'Converting...';
     buttonEl.disabled = true;
 
+    const downloadBtn = document.getElementById(`drawioDownloadBtn_${itemId}`);
+    const openBtn = document.getElementById(`drawioOpenBtn_${itemId}`);
+
     chrome.runtime.sendMessage({
         type: "CONVERT_TO_DRAWIO",
         payload: { itemId: itemId }
     }, (response) => {
         buttonEl.disabled = false;
         if (response && response.success) {
-            buttonEl.textContent = 'Downloaded!';
-            showStatus(`draw.io file saved: ${response.filename || 'diagram.drawio'}`, "success");
-            setTimeout(() => { buttonEl.textContent = originalText; }, 3000);
+            buttonEl.textContent = '✓ draw.io ready';
+            buttonEl.classList.add('drawio-convert-btn--done');
+            showStatus('draw.io diagram ready — download or open above.', 'success');
+
+            if (downloadBtn) downloadBtn.disabled = false;
+            if (openBtn) openBtn.disabled = false;
         } else {
             buttonEl.textContent = 'Error';
             showStatus(`draw.io conversion failed: ${response?.error || 'Unknown error'}`, "error");
@@ -227,6 +241,25 @@ function handleConvertToDrawio(itemId, buttonEl) {
         }
     });
 }
+
+// function handleConvertToToml(itemId, buttonEl) {
+//     if (!buttonEl) return;
+//     const originalText = buttonEl.textContent;
+//     buttonEl.textContent = 'Exporting...';
+//     buttonEl.disabled = true;
+//     chrome.runtime.sendMessage({ type: "CONVERT_TO_TOML", payload: { itemId } }, (response) => {
+//         buttonEl.disabled = false;
+//         if (response && response.success) {
+//             buttonEl.textContent = 'Downloaded!';
+//             showStatus(`TOML file saved: ${response.filename || 'item.toml'}`, "success");
+//             setTimeout(() => { buttonEl.textContent = originalText; }, 3000);
+//         } else {
+//             buttonEl.textContent = 'Error';
+//             showStatus(`TOML export failed: ${response?.error || 'Unknown error'}`, "error");
+//             setTimeout(() => { buttonEl.textContent = originalText; }, 3000);
+//         }
+//     });
+// }
 
 
 // --- Initialization ---
@@ -238,10 +271,14 @@ document.addEventListener("DOMContentLoaded", async () => {
   loadSavedContent();
   addEventListeners();
 
-  // Load AI mode, apply UI, then check model status
-  await loadAIModeFromStorage();
-  applyAIModeToUI();
-  checkAIStatus();
+  if (chatSendBtn) chatSendBtn.addEventListener("click", handleChatSend);
+  if (chatSaveBtn) chatSaveBtn.addEventListener("click", handleChatSave);
+  if (chatNewBtn) chatNewBtn.addEventListener("click", handleChatNew);
+  if (chatInputEl) {
+    chatInputEl.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleChatSend(); }
+    });
+  }
 
   // AN-9: Add listener for status updates from background (non-response channel)
   chrome.runtime.onMessage.addListener(handleBackgroundStatusUpdate);
@@ -259,57 +296,9 @@ function handleBackgroundStatusUpdate(message, sender, sendResponse) {
 }
 
 
-// --- AI MODE: read from storage ---
-function loadAIModeFromStorage() {
-  return new Promise((resolve) => {
-    chrome.storage.local.get(["aiMode"], (res) => {
-      aiMode = res.aiMode || "local-first";
-      resolve(aiMode);
-    });
-  });
-}
-
-// --- AI UI: reflect mode in the status pill & buttons ---
-function applyAIModeToUI() {
-  if (!aiStatusIndicator) return;
-
-  let label = "";
-  if (aiMode === "disabled") {
-    label = "AI disabled — turn on in Settings";
-    aiStatusIndicator.className = "ai-status disabled";
-    initializeAIBtn.disabled = true;
-    generateEmbeddingsBtn.style.display = "none";
-  } else if (aiMode === "cloud-only") {
-    label = "AI mode: Cloud (Gemini) — no local model needed";
-    aiStatusIndicator.className = "ai-status ready";
-    initializeAIBtn.disabled = true; // no local model to init
-    generateEmbeddingsBtn.style.display = "none";
-  } else if (aiMode === "local-only") {
-    label = "AI mode: Local only — initialize to enable features";
-    aiStatusIndicator.className = "ai-status disabled";
-    initializeAIBtn.disabled = false;
-    generateEmbeddingsBtn.style.display = "none"; // show after init
-  } else {
-    // 'local-first' (default)
-    label = "AI mode: Local-first — initialize local model";
-    aiStatusIndicator.className = "ai-status disabled";
-    initializeAIBtn.disabled = false;
-    generateEmbeddingsBtn.style.display = "none"; // show after init
-  }
-
-  aiStatusIndicator.textContent = label;
-}
-
 // --- Event Listener Setup ---
 /** Adds event listeners to all static interactive elements in the panel. */
 function addEventListeners() {
-  if (initializeAIBtn) {
-    initializeAIBtn.addEventListener("click", handleInitializeAI);
-  }
-
-  if (generateEmbeddingsBtn) {
-    generateEmbeddingsBtn.addEventListener("click", handleGenerateEmbeddings);
-  }
   // Settings Button
   if (panelOptionsBtn)
     panelOptionsBtn.addEventListener("click", () =>
@@ -394,15 +383,6 @@ function addEventListeners() {
     exportProjectBtn.addEventListener("click", handleExportProjectClick);
   else console.warn("Export Project button not found.");
 
-  // Add to addEventListeners() function (around line 60)
-  // AI Control Buttons
-  if (initializeAIBtn)
-    initializeAIBtn.addEventListener("click", handleInitializeAI);
-  else console.warn("Initialize AI button not found.");
-  if (generateEmbeddingsBtn)
-    generateEmbeddingsBtn.addEventListener("click", handleGenerateEmbeddings);
-  else console.warn("Generate Embeddings button not found.");
-
   // Listener for clicks within the item list (using event delegation)
   if (panelContentListEl) {
     panelContentListEl.addEventListener("click", (event) => {
@@ -430,13 +410,11 @@ function addEventListeners() {
         const tagName = (addInput.value || '').trim();
         const itemData = currentItemsCache.find(i => i.id === contentId) || {};
 
-        if (tagName.length === 0 && aiInitialized) {
-          enhancedAddTag(contentId, null, itemData.content, addInput, tagsListEl);
-        } else if (tagName.length > 0) {
+        if (tagName.length > 0) {
           enhancedAddTag(contentId, tagName, itemData.content, addInput, tagsListEl);
           addInput.value = '';
         } else {
-          showStatus('Enter a tag name or initialize AI for suggestions.', 'info');
+          showStatus('Enter a tag name.', 'info');
         }
         return; // handled
       }
@@ -517,13 +495,11 @@ function addEventListeners() {
         return;
       }
 
-      if (tagName.length === 0 && aiInitialized) {
-        enhancedAddTag(contentId, null, itemData.content, inputEl, tagsListEl);
-      } else if (tagName.length > 0) {
+      if (tagName.length > 0) {
         enhancedAddTag(contentId, tagName, itemData.content, inputEl, tagsListEl);
         inputEl.value = '';
       } else {
-        showStatus('Enter a tag name or initialize AI for suggestions.', 'info');
+        showStatus('Enter a tag name.', 'info');
       }
     });
   }
@@ -1140,20 +1116,20 @@ function displayItemDetails(item, detailElement) {
        </div>`
     : "";
     
-  // AN-5: Notes HTML Block (Includes AN-8 PII Button)
+  // AN-5: Notes HTML Block (Includes AN-8 PII Button) — collapsible accordion
   const notesHtml = `
-        <div class="detail-notes-section" style="margin-top: 15px; padding-top: 10px; border-top: 1px solid var(--panel-border-light);">
-            <h5 style="margin-top: 0; margin-bottom: 8px; font-size: 0.95em; font-weight: 600; color: var(--panel-secondary-text-light);">Personal Notes & Annotations</h5>
-            <textarea id="itemNotesInput_${item.id}" 
-                      placeholder="Add detailed notes or context here..." 
-                      style="width: 100%; min-height: 100px; padding: 8px; box-sizing: border-box; resize: vertical; font-size: 0.9em; border: 1px solid var(--panel-border-light); border-radius: 4px;">${esc(notesContent)}</textarea>
-            <button id="saveNotesBtn_${item.id}" class="add-tag-btn" style="float: right; margin-top: 8px; margin-bottom: 8px;">Save Notes</button>
-            
-            <!-- AN-8: Anonymization Button -->
-            <button id="anonymizeBtn_${item.id}" class="add-tag-btn" style="float: right; margin-top: 8px; margin-bottom: 8px; margin-right: 10px; background-color: #c0392b; color: white;">Anonymize PII</button>
-            
-            <div style="clear: both;"></div>
-        </div>
+        <details class="detail-accordion detail-notes-section">
+            <summary class="detail-accordion-summary">Personal Notes &amp; Annotations</summary>
+            <div class="detail-accordion-body">
+                <textarea id="itemNotesInput_${item.id}"
+                          placeholder="Add detailed notes or context here..."
+                          class="notes-textarea">${esc(notesContent)}</textarea>
+                <div class="notes-actions">
+                    <button id="anonymizeBtn_${item.id}" class="add-tag-btn notes-action-btn notes-action-btn--danger">Anonymize PII</button>
+                    <button id="saveNotesBtn_${item.id}" class="add-tag-btn notes-action-btn">Save Notes</button>
+                </div>
+            </div>
+        </details>
     `;
 
 
@@ -1218,8 +1194,28 @@ function displayItemDetails(item, detailElement) {
       // Convert to draw.io button — only when a diagram was detected
       if (item.analysis?.diagramData) {
         analysisHtml += `
-          <button id="convertDrawioBtn_${item.id}" class="add-tag-btn" style="margin-top:8px;padding:5px 12px;font-size:0.85em;">Convert to draw.io</button>`;
+          <div class="drawio-action-group" style="display:inline-flex;align-items:center;gap:6px;margin-top:8px;">
+            <button id="convertDrawioBtn_${item.id}" class="add-tag-btn drawio-convert-btn" style="padding:5px 12px;font-size:0.85em;">Convert to draw.io</button>
+            <button id="drawioDownloadBtn_${item.id}" class="drawio-icon-btn" title="Download .drawio file" disabled>
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M8 2v8M5 7l3 3 3-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M3 12h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+              </svg>
+            </button>
+            <button id="drawioOpenBtn_${item.id}" class="drawio-icon-btn" title="Open in app.diagrams.net" disabled>
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M7 3H3a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1V9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M10 2h4v4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M14 2L8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+              </svg>
+            </button>
+          </div>`;
       }
+      // TOML export — disabled pending proper serializer
+      // if (item.analysis) {
+      //   analysisHtml += `
+      //     <button id="convertTomlBtn_${item.id}" class="add-tag-btn" style="margin-top:8px;margin-left:6px;padding:5px 12px;font-size:0.85em;">Export as TOML</button>`;
+      // }
       break;
     }
 
@@ -1312,6 +1308,35 @@ function displayItemDetails(item, detailElement) {
         });
     }
 
+    // --- draw.io Download icon ---
+    const drawioDownloadBtn = detailElement.querySelector(`#drawioDownloadBtn_${item.id}`);
+    if (drawioDownloadBtn) {
+        drawioDownloadBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const safeTitle = (item.title || 'diagram').replace(/[^a-zA-Z0-9_-]/g, '_').substring(0, 40);
+            const filename = `${safeTitle}.drawio`;
+            chrome.runtime.sendMessage({ type: 'DOWNLOAD_DRAWIO', payload: { itemId: item.id, filename } });
+        });
+    }
+
+    // --- draw.io Open-in-browser icon ---
+    const drawioOpenBtn = detailElement.querySelector(`#drawioOpenBtn_${item.id}`);
+    if (drawioOpenBtn) {
+        drawioOpenBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            chrome.runtime.sendMessage({ type: 'OPEN_DRAWIO', payload: { itemId: item.id } });
+        });
+    }
+
+    // --- Convert to TOML Event Listener --- (disabled pending proper serializer)
+    // const convertTomlBtn = detailElement.querySelector(`#convertTomlBtn_${item.id}`);
+    // if (convertTomlBtn) {
+    //     convertTomlBtn.addEventListener('click', (e) => {
+    //         e.stopPropagation();
+    //         handleConvertToToml(item.id, convertTomlBtn);
+    //     });
+    // }
+
   const screenshotFull = detailElement.querySelector('.screenshot-full');
     if (screenshotFull) {
         screenshotFull.addEventListener('click', (e) => {
@@ -1361,10 +1386,8 @@ function displayItemDetails(item, detailElement) {
       // SHORT-LIVED DEBUG: confirm handler invocation and values
       console.log("panel: handleAddTag invoked for item", item.id, "inputValue:", tagName);
 
-      // Check if the user entered text or just clicked for suggestions
-      if (tagName.length === 0 && aiInitialized) {
-        enhancedAddTag(item.id, null, itemContent, addTagInput, tagsListElement);
-      } else if (tagName.length > 0) {
+      // Check if the user entered text
+      if (tagName.length > 0) {
         enhancedAddTag(
           item.id,
           tagName,
@@ -1372,10 +1395,9 @@ function displayItemDetails(item, detailElement) {
           addTagInput,
           tagsListElement
         );
-        addTagInput.value = ""; // Clear input immediately after successful submission attempt
+        addTagInput.value = "";
       } else {
-        // User clicked button but no input and AI is not initialized
-        showStatus("Enter a tag name or initialize AI for suggestions.", "info");
+        showStatus("Enter a tag name.", "info");
       }
     } catch (err) {
       // SHORT-LIVED DEBUG: surface any unexpected exception in the click handler
@@ -1602,6 +1624,111 @@ function loadFilterTags() {
   });
 }
 
+// --- Chat Logic ---
+
+// --- Chat Logic ---
+
+function updateChatAccordionHint() {
+  if (!chatAccordionHintEl) return;
+  chatAccordionHintEl.textContent = currentFilterTagNames.length > 0
+    ? `Scoped to: ${currentFilterTagNames.join(", ")}`
+    : "Scoped to: all items";
+}
+
+async function handleChatSend() {
+  const msg = chatInputEl?.value?.trim();
+  if (!msg) return;
+
+  appendChatBubble("user", msg);
+  chatInputEl.value = "";
+  chatSendBtn.disabled = true;
+
+  const thinkingId = appendChatBubble("assistant", "…");
+
+  try {
+    const response = await new Promise((resolve, reject) => {
+      chrome.runtime.sendMessage(
+        {
+          type: "CHAT_MESSAGE",
+          payload: {
+            tagIds: currentFilterTagIds,
+            userMessage: msg,
+            history: chatConversationHistory,
+          }
+        },
+        (r) => {
+          if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
+          else resolve(r);
+        }
+      );
+    });
+
+    updateChatBubble(thinkingId, response?.success ? response.reply : `Error: ${response?.error || "Unknown error"}`);
+
+    if (response?.success) {
+      chatConversationHistory.push({ role: "user", content: msg });
+      chatConversationHistory.push({ role: "assistant", content: response.reply });
+      if (chatConversationHistory.length > 20) chatConversationHistory = chatConversationHistory.slice(-20);
+      if (chatSaveBtn) chatSaveBtn.disabled = false;
+    }
+  } catch (err) {
+    updateChatBubble(thinkingId, `Error: ${err.message}`);
+  } finally {
+    chatSendBtn.disabled = false;
+  }
+}
+
+let _chatBubbleCounter = 0;
+function appendChatBubble(role, text) {
+  if (!chatHistoryEl) return null;
+  const id = `chat-bubble-${++_chatBubbleCounter}`;
+  const div = document.createElement("div");
+  div.className = `chat-bubble chat-bubble--${role}`;
+  div.id = id;
+  div.textContent = text;
+  chatHistoryEl.appendChild(div);
+  chatHistoryEl.scrollTop = chatHistoryEl.scrollHeight;
+  return id;
+}
+
+function updateChatBubble(id, text) {
+  if (!id) return;
+  const el = document.getElementById(id);
+  if (el) {
+    el.textContent = text;
+    chatHistoryEl.scrollTop = chatHistoryEl.scrollHeight;
+  }
+}
+
+function handleChatSave() {
+  if (chatConversationHistory.length === 0) return;
+  if (chatSaveBtn) chatSaveBtn.disabled = true;
+  chrome.runtime.sendMessage(
+    {
+      type: "SAVE_CHAT_SESSION",
+      payload: {
+        history: chatConversationHistory,
+        tagIds: currentFilterTagIds,
+        tagNames: currentFilterTagNames,
+      }
+    },
+    (response) => {
+      if (chatSaveBtn) chatSaveBtn.disabled = false;
+      if (response?.success) {
+        showStatus("Chat saved to your items.", "success");
+      } else {
+        showStatus(`Save failed: ${response?.error || "Unknown error"}`, "error");
+      }
+    }
+  );
+}
+
+function handleChatNew() {
+  chatConversationHistory = [];
+  if (chatHistoryEl) chatHistoryEl.innerHTML = "";
+  if (chatSaveBtn) chatSaveBtn.disabled = true;
+}
+
 /** Handles clicks on a tag in the filter list */
 
     function handleFilterTagClick(event) {
@@ -1802,6 +1929,8 @@ function hideKeyPointsResultArea() {
         ? `Get Key Points for "${currentFilterTagNames.join(", ")}"`
         : "Get Key Points";
 
+      updateChatAccordionHint();
+
       if (getKeyPointsBtn) {
         getKeyPointsBtn.textContent = buttonText;
         getKeyPointsBtn.style.display = hasTags ? "inline-block" : "none";
@@ -1900,165 +2029,8 @@ function sendMessageAsync(message, timeoutMs = 20000) {
   });
 }
 
-/** Initialize Local AI functionality */
-async function handleInitializeAI() {
-  // Respect the mode first
-  if (aiMode === "disabled") {
-    showStatus("AI is disabled. Enable it in Settings to proceed.", "info");
-    return;
-  }
-  if (aiMode === "cloud-only") {
-    showStatus(
-      "Cloud AI mode is active. No local model to initialize.",
-      "info"
-    );
-    return;
-  }
-
-  // Prevent double-clicks / re-entrancy
-  if (aiLoading) return;
-  aiLoading = true;
-
-  aiStatusIndicator.className = "ai-status loading";
-  aiStatusIndicator.textContent =
-    "Initializing local AI… (first time may take a moment)";
-  initializeAIBtn.disabled = true;
-
-  try {
-    const response = await sendMessageAsync(
-      { type: "INITIALIZE_LOCAL_AI" },
-      30000
-    );
-
-    if (response && response.success) {
-      aiInitialized = true;
-      aiStatusIndicator.className = "ai-status ready";
-      aiStatusIndicator.textContent = "Local AI ready - Tag suggestions available";
-      showStatus("Local AI initialized.", "success");
-
-      // show embeddings button if available
-      if (generateEmbeddingsBtn)
-        generateEmbeddingsBtn.style.display = "inline-block";
-    } else {
-      throw new Error(response?.error || "Unknown error");
-    }
-  } catch (err) {
-    aiInitialized = false;
-    aiStatusIndicator.className = "ai-status error";
-    aiStatusIndicator.textContent = "Local AI failed to initialize";
-    showStatus(`Failed to initialize local AI: ${err.message}`, "error");
-    // Let the user try again
-    initializeAIBtn.disabled = false;
-  } finally {
-    aiLoading = false;
-  }
-}
-
-// --- Existing handleInitializeAI() ends here ---
-
-async function handleGenerateEmbeddings() {
-  if (!aiInitialized) {
-    showStatus("Initialize Local AI first.", "info");
-    return;
-  }
-
-  aiStatusIndicator.className = "ai-status processing";
-  aiStatusIndicator.textContent = "Generating embeddings for tags…";
-  generateEmbeddingsBtn.disabled = true;
-
-  chrome.runtime.sendMessage(
-    { type: "GENERATE_EMBEDDINGS_FOR_TAGS" },
-    (response) => {
-      generateEmbeddingsBtn.disabled = false;
-
-      if (response && response.success) {
-        aiStatusIndicator.className = "ai-status ready";
-        aiStatusIndicator.textContent = "Embeddings ready - Tag suggestions available";
-        showStatus("Embeddings generated for tags.", "success");
-      } else {
-        aiStatusIndicator.className = "ai-status error";
-        aiStatusIndicator.textContent = "Failed to generate embeddings";
-        showStatus(
-          `Embedding generation failed: ${response?.error || "Unknown error"}`,
-          "error"
-        );
-      }
-    }
-  );
-}
-
-/** Generate embeddings for all existing tags */
-async function handleGenerateEmbeddings() {
-  if (!aiInitialized) {
-    showStatus(
-      "Please initialize AI first before generating embeddings.",
-      "error"
-    );
-    return;
-  }
-
-  if (generateEmbeddingsBtn) {
-    generateEmbeddingsBtn.disabled = true;
-    generateEmbeddingsBtn.textContent = "Processing...";
-  }
-
-  updateAIStatus("processing", "Generating embeddings for existing tags...");
-
-  try {
-    const response = await chrome.runtime.sendMessage({
-      type: "GENERATE_EMBEDDINGS_FOR_TAGS",
-    });
-
-    if (response.success) {
-      const { processed, skipped, total } = response.payload;
-      updateAIStatus(
-        "ready",
-        `Embeddings ready (${processed}/${total} tags processed)`
-      );
-      showStatus(
-        `Embeddings generated: ${processed} processed, ${skipped} skipped.`,
-        "success"
-      );
-    } else {
-      throw new Error(response.error);
-    }
-  } catch (error) {
-    console.error("Failed to generate embeddings:", error);
-    updateAIStatus("error", "Failed to generate embeddings");
-    showStatus(`Failed to generate embeddings: ${error.message}`, "error");
-  } finally {
-    if (generateEmbeddingsBtn) {
-      generateEmbeddingsBtn.disabled = false;
-      generateEmbeddingsBtn.textContent = "Generate Embeddings";
-    }
-  }
-}
-
-/** Update AI status indicator */
-function updateAIStatus(status, message) {
-  if (!aiStatusIndicator) return;
-
-  aiStatusIndicator.className = `ai-status ${status}`;
-  aiStatusIndicator.textContent = message;
-
-  aiStatusIndicator.style.display = status === "hidden" ? "none" : "block";
-}
-
-/** Update AI button visibility and states */
-function updateAIButtons() {
-  if (initializeAIBtn) {
-    initializeAIBtn.style.display = aiInitialized ? "none" : "inline-block";
-  }
-
-  if (generateEmbeddingsBtn) {
-    generateEmbeddingsBtn.style.display = aiInitialized
-      ? "inline-block"
-      : "none";
-  }
-}
-
 /**
- * Enhanced tag adding with AI suggestions or direct tag addition.
+ * Add a tag to a content item.
  */
 async function enhancedAddTag(
   contentId,
@@ -2075,9 +2047,8 @@ async function enhancedAddTag(
   if (userInput && userInput.trim()) {
     const normalizedTag = userInput;
     showStatus(`Adding tag "${normalizedTag}"...`, "info", false);
-    suppressContentReload = true; // Prevent accordion collapse from storage listener
+    suppressContentReload = true;
 
-    // TEMP LOG: trace outgoing add-tag message from panel
     console.log("panel -> ADD_TAG_TO_ITEM", { contentId: contentId, tagName: normalizedTag });
     chrome.runtime.sendMessage(
       {
@@ -2085,7 +2056,6 @@ async function enhancedAddTag(
         payload: { contentId: contentId, tagName: normalizedTag },
       },
       (response) => {
-          // SHORT-LIVED DEBUG: raw response echo from background
           console.log("panel <- raw response for ADD_TAG_TO_ITEM:", response);
           if (chrome.runtime.lastError) {
             console.error("panel: runtime.lastError after sendMessage (ADD_TAG_TO_ITEM):", chrome.runtime.lastError);
@@ -2095,134 +2065,6 @@ async function enhancedAddTag(
           try { handleTagActionResponse(response, contentId, tagsListEl); } catch (e) { console.error("panel: handleTagActionResponse threw:", e); }
       }
     );
-    return;
-  }
-
-  if (aiInitialized && contentText) {
-    await showTagSuggestions(contentId, contentText, tagInputEl, tagsListEl);
-  } else {
-    showStatus("Enter a tag name or initialize AI for suggestions.", "info");
-  }
-}
-
-/**
- * Show AI-generated tag suggestions.
- */
-async function showTagSuggestions(
-  contentId,
-  contentText,
-  inputElement,
-  tagsListEl
-) {
-  try {
-    let suggestionsContainer =
-      inputElement.parentElement.querySelector(".tag-suggestions");
-    if (!suggestionsContainer) {
-      suggestionsContainer = document.createElement("div");
-      suggestionsContainer.className = "tag-suggestions";
-      inputElement.parentElement.appendChild(suggestionsContainer);
-    }
-    suggestionsContainer.innerHTML =
-      '<span class="suggestion-loading">🤖 Analyzing content...</span>';
-
-    const response = await chrome.runtime.sendMessage({
-      type: "SUGGEST_TAGS_FOR_CONTENT",
-      payload: { content: contentText },
-    });
-
-    if (response.success && response.payload.length > 0) {
-      suggestionsContainer.innerHTML = `
-                <span class="suggestion-label">🤖 Suggested tags:</span>
-                ${response.payload
-                  .map(
-                    (suggestion) =>
-                      `<button class="tag-suggestion" data-tag="${
-                        suggestion.name
-                      }" data-content-id="${contentId}">
-                        ${suggestion.name} (${(
-                        suggestion.similarity * 100
-                      ).toFixed(0)}%)
-                    </button>`
-                  )
-                  .join("")}
-            `;
-
-      suggestionsContainer
-        .querySelectorAll(".tag-suggestion")
-        .forEach((btn) => {
-          btn.addEventListener("click", (e) => {
-            e.preventDefault();
-            const tagName = btn.dataset.tag;
-            const targetContentId = parseInt(btn.dataset.contentId);
-
-            showStatus(`Adding suggested tag "${tagName}"...`, "info", false);
-            suppressContentReload = true; // Prevent accordion collapse from storage listener
-            // TEMP LOG: trace outgoing add-tag message from suggestion click
-            console.log("panel -> ADD_TAG_TO_ITEM (suggestion)", { contentId: targetContentId, tagName: tagName });
-            chrome.runtime.sendMessage(
-              {
-                type: "ADD_TAG_TO_ITEM",
-                payload: { contentId: targetContentId, tagName: tagName },
-              },
-              (response) => {
-                // SHORT-LIVED DEBUG: raw response echo from background (suggestion path)
-                console.log("panel <- raw response for ADD_TAG_TO_ITEM (suggestion):", response);
-                if (chrome.runtime.lastError) {
-                  console.error("panel: runtime.lastError after sendMessage (ADD_TAG_TO_ITEM suggestion):", chrome.runtime.lastError);
-                  handleTagActionResponse({ success: false, error: chrome.runtime.lastError.message }, targetContentId, tagsListEl);
-                  suggestionsContainer.remove();
-                  return;
-                }
-                try { handleTagActionResponse(response, targetContentId, tagsListEl); } catch (e) { console.error("panel: handleTagActionResponse threw (suggestion):", e); }
-                suggestionsContainer.remove();
-              }
-            );
-          });
-        });
-    } else {
-      suggestionsContainer.innerHTML =
-        '<span class="suggestion-empty">🤖 No similar tags found. Try typing a new tag!</span>';
-      setTimeout(() => {
-        if (suggestionsContainer.parentElement) {
-          suggestionsContainer.remove();
-        }
-      }, 3000);
-    }
-  } catch (error) {
-    console.error("Failed to get tag suggestions:", error);
-    const suggestionsContainer =
-      inputElement.parentElement.querySelector(".tag-suggestions");
-    if (suggestionsContainer) {
-      suggestionsContainer.innerHTML =
-        '<span class="suggestion-error">❌ Failed to get suggestions</span>';
-    }
-  }
-}
-
-/** Check AI initialization status on load */
-async function checkAIStatus() {
-  try {
-    const response = await chrome.runtime.sendMessage({
-      type: "GET_LOCAL_AI_STATUS",
-    });
-
-    if (response.success) {
-      aiInitialized = response.payload.isReady;
-
-      if (aiInitialized) {
-        updateAIStatus("ready", "AI ready - Tag suggestions available");
-      } else {
-        updateAIStatus(
-          "disabled",
-          "AI disabled - Click to enable tag suggestions"
-        );
-      }
-
-      updateAIButtons();
-    }
-  } catch (error) {
-    console.error("Failed to check AI status:", error);
-    updateAIStatus("error", "Failed to check AI status");
   }
 }
 

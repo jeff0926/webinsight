@@ -1,0 +1,347 @@
+{
+  "description": "This diagram illustrates an architecture for **Agent2Agent Interoperability**, centered around **SAP BTP**.\n\nSAP BTP hosts internal agents (built with Joule Agent Builder) and provides an **Agent Catalog** (using ORD for registration and A2A for routing) and an **Agent Connector**. This system enables internal SAP applications and agents to discover and interact with each other, and also to connect with and leverage external AI agents hosted on major cloud platforms like **Google Cloud (Vertex AI), Microsoft Azure (AI Foundry), and AWS (Bedrock Agents)**, each having their own agent connectors and catalogs.",
+  "diagramData": {
+    "contains_diagram": true,
+    "title": "Agent2Agent Interoperability",
+    "nodes": [
+      {
+        "id": "SAP_Applications",
+        "label": "SAP Applications",
+        "type": "Platform"
+      },
+      {
+        "id": "S4HANA",
+        "label": "SAP S/4HANA",
+        "type": "Application"
+      },
+      {
+        "id": "SuccessFactors",
+        "label": "SAP SuccessFactors",
+        "type": "Application"
+      },
+      {
+        "id": "Business_Networks",
+        "label": "SAP Business Networks",
+        "type": "Application"
+      },
+      {
+        "id": "Customer_Experience",
+        "label": "SAP Customer Experience",
+        "type": "Application"
+      },
+      {
+        "id": "Concur",
+        "label": "SAP Concur",
+        "type": "Application"
+      },
+      {
+        "id": "Business_Data_Cloud",
+        "label": "SAP Business Data Cloud",
+        "type": "Application"
+      },
+      {
+        "id": "SAP_BTP",
+        "label": "SAP BTP",
+        "type": "Platform"
+      },
+      {
+        "id": "Subaccount",
+        "label": "Subaccount",
+        "type": "Container"
+      },
+      {
+        "id": "Joule_Agent_Builder",
+        "label": "Joule Agent Builder",
+        "type": "Service"
+      },
+      {
+        "id": "Orchestrator_Agent",
+        "label": "Orchestrator Agent",
+        "type": "Agent"
+      },
+      {
+        "id": "Joule_Other_Agents",
+        "label": "Other Agents",
+        "type": "Agent"
+      },
+      {
+        "id": "Dispute_Resolution_Agent",
+        "label": "Dispute Resolution Agent",
+        "type": "Agent"
+      },
+      {
+        "id": "Agent_Connector_CAP",
+        "label": "Agent Connector CAP Application ORD & A2A Server",
+        "type": "Service"
+      },
+      {
+        "id": "Agent_Catalog_CAP",
+        "label": "Agent Catalog CAP Application",
+        "type": "Service"
+      },
+      {
+        "id": "ORD_Aggregator",
+        "label": "ORD Aggregator",
+        "type": "Service"
+      },
+      {
+        "id": "Agent_Reg_Internal",
+        "label": "Agent Registration Internal Agents",
+        "type": "Service"
+      },
+      {
+        "id": "List_Reg_Agents",
+        "label": "List registered agents Internal/External",
+        "type": "Service"
+      },
+      {
+        "id": "Catalog_Federation",
+        "label": "Catalog Federation Internal/External",
+        "type": "Service"
+      },
+      {
+        "id": "A2A_Router",
+        "label": "A2A Router A2A Client",
+        "type": "Service"
+      },
+      {
+        "id": "Agent_Trigger",
+        "label": "Agent Trigger internal/external",
+        "type": "Service"
+      },
+      {
+        "id": "SAP_HANA_Cloud",
+        "label": "SAP HANA Cloud",
+        "type": "Data Source"
+      },
+      {
+        "id": "Network",
+        "label": "Network",
+        "type": "Container"
+      },
+      {
+        "id": "Google_Cloud",
+        "label": "Google Cloud",
+        "type": "Cloud Platform"
+      },
+      {
+        "id": "GC_Catalog_Connector",
+        "label": "Catalog Agent Connector (ORD & A2A Server)",
+        "type": "Service"
+      },
+      {
+        "id": "Google_Vertex_AI",
+        "label": "Google Vertex AI",
+        "type": "Service"
+      },
+      {
+        "id": "ADK_Agent_Engine",
+        "label": "ADK on Agent Engine",
+        "type": "Agent"
+      },
+      {
+        "id": "GC_Other_Agents",
+        "label": "Other Agents",
+        "type": "Agent"
+      },
+      {
+        "id": "Microsoft_Azure",
+        "label": "Microsoft Azure",
+        "type": "Cloud Platform"
+      },
+      {
+        "id": "Azure_Catalog_Connector",
+        "label": "Catalog Agent Connector (ORD & A2A Server)",
+        "type": "Service"
+      },
+      {
+        "id": "Azure_AI_Foundry",
+        "label": "Azure AI Foundry",
+        "type": "Service"
+      },
+      {
+        "id": "Azure_Agents",
+        "label": "Azure Agents",
+        "type": "Agent"
+      },
+      {
+        "id": "Azure_Other_Agents",
+        "label": "Other Agents",
+        "type": "Agent"
+      },
+      {
+        "id": "AWS",
+        "label": "AWS",
+        "type": "Cloud Platform"
+      },
+      {
+        "id": "AWS_Catalog_Connector",
+        "label": "Catalog Agent Connector (ORD & A2A Server)",
+        "type": "Service"
+      },
+      {
+        "id": "Bedrock_Agents_Service",
+        "label": "Bedrock Agents",
+        "type": "Service"
+      },
+      {
+        "id": "Bedrock_Agents_Agent",
+        "label": "Bedrock Agents",
+        "type": "Agent"
+      },
+      {
+        "id": "AWS_Other_Agents",
+        "label": "Other Agents",
+        "type": "Agent"
+      }
+    ],
+    "edges": [
+      {
+        "source": "S4HANA",
+        "target": "Orchestrator_Agent",
+        "label": "interacts with"
+      },
+      {
+        "source": "SuccessFactors",
+        "target": "Orchestrator_Agent",
+        "label": "interacts with"
+      },
+      {
+        "source": "Business_Networks",
+        "target": "Orchestrator_Agent",
+        "label": "interacts with"
+      },
+      {
+        "source": "Customer_Experience",
+        "target": "Orchestrator_Agent",
+        "label": "interacts with"
+      },
+      {
+        "source": "Concur",
+        "target": "Orchestrator_Agent",
+        "label": "interacts with"
+      },
+      {
+        "source": "Business_Data_Cloud",
+        "target": "Orchestrator_Agent",
+        "label": "interacts with"
+      },
+      {
+        "source": "Dispute_Resolution_Agent",
+        "target": "Agent_Connector_CAP",
+        "label": "ORD"
+      },
+      {
+        "source": "Agent_Connector_CAP",
+        "target": "Agent_Catalog_CAP",
+        "label": "ORD"
+      },
+      {
+        "source": "Agent_Connector_CAP",
+        "target": "A2A_Router",
+        "label": "A2A"
+      },
+      {
+        "source": "Agent_Catalog_CAP",
+        "target": "SAP_HANA_Cloud",
+        "label": "persists data to"
+      },
+      {
+        "source": "A2A_Router",
+        "target": "SAP_HANA_Cloud",
+        "label": "persists data to"
+      },
+      {
+        "source": "ORD_Aggregator",
+        "target": "GC_Catalog_Connector",
+        "label": "ORD"
+      },
+      {
+        "source": "ORD_Aggregator",
+        "target": "Azure_Catalog_Connector",
+        "label": "ORD"
+      },
+      {
+        "source": "ORD_Aggregator",
+        "target": "AWS_Catalog_Connector",
+        "label": "ORD"
+      },
+      {
+        "source": "Catalog_Federation",
+        "target": "GC_Catalog_Connector",
+        "label": "Trust"
+      },
+      {
+        "source": "Catalog_Federation",
+        "target": "Azure_Catalog_Connector",
+        "label": "Trust"
+      },
+      {
+        "source": "Catalog_Federation",
+        "target": "AWS_Catalog_Connector",
+        "label": "Trust"
+      },
+      {
+        "source": "Agent_Trigger",
+        "target": "GC_Catalog_Connector",
+        "label": "A2A"
+      },
+      {
+        "source": "Agent_Trigger",
+        "target": "Azure_Catalog_Connector",
+        "label": "A2A"
+      },
+      {
+        "source": "Agent_Trigger",
+        "target": "AWS_Catalog_Connector",
+        "label": "A2A"
+      },
+      {
+        "source": "GC_Catalog_Connector",
+        "target": "Google_Vertex_AI",
+        "label": "connects to"
+      },
+      {
+        "source": "Google_Vertex_AI",
+        "target": "ADK_Agent_Engine",
+        "label": "manages"
+      },
+      {
+        "source": "Google_Vertex_AI",
+        "target": "GC_Other_Agents",
+        "label": "manages"
+      },
+      {
+        "source": "Azure_Catalog_Connector",
+        "target": "Azure_AI_Foundry",
+        "label": "connects to"
+      },
+      {
+        "source": "Azure_AI_Foundry",
+        "target": "Azure_Agents",
+        "label": "manages"
+      },
+      {
+        "source": "Azure_AI_Foundry",
+        "target": "Azure_Other_Agents",
+        "label": "manages"
+      },
+      {
+        "source": "AWS_Catalog_Connector",
+        "target": "Bedrock_Agents_Service",
+        "label": "connects to"
+      },
+      {
+        "source": "Bedrock_Agents_Service",
+        "target": "Bedrock_Agents_Agent",
+        "label": "manages"
+      },
+      {
+        "source": "Bedrock_Agents_Service",
+        "target": "AWS_Other_Agents",
+        "label": "manages"
+      }
+    ]
+  },
+  "layout": null
+}

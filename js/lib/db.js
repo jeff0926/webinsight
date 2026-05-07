@@ -2,10 +2,10 @@
 
 // --- Configuration ---
 const DB_NAME = 'WebInsightDB';
-const DB_VERSION = 2; // Keep version 2
+const DB_VERSION = 3;
 const CONTENT_STORE_NAME = 'contentItems';
-const TAG_STORE_NAME = 'tags'; // New store for unique tags
-const CONTENT_TAG_STORE_NAME = 'contentTags'; // New store for relationships
+const TAG_STORE_NAME = 'tags';
+const CONTENT_TAG_STORE_NAME = 'contentTags';
 
 // --- Database Instance ---
 let db = null; // Holds the database connection instance
@@ -728,8 +728,7 @@ export {
     addTag, getTagByName, getAllTags, deleteTag, getTagsByIds,
     // Linking Methods
     linkTagToContent, unlinkTagFromContent, getTagIdsByContentId, getContentIdsByTagId,
-    getAllContentTags, // Export the new function
-    // New exports for backup/restore
+    getAllContentTags,
     clearAllData,
-    bulkImportData
+    bulkImportData,
 };
